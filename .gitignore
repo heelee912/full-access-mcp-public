@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.env
+.runtime/
+.tmp/
+.tools/
+.external/
+.full-access-mcp/
+output/
+playwright-report/
+test-results/
+coverage/
+tmp_*.json
+tmp_validation/
