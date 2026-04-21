@@ -4,15 +4,22 @@ const chatGptMcpContextPatterns = [
   'sharing data includes',
   'using tools comes with risks',
   'local workspace files will be modified',
+  'this will execute',
   'this will overwrite',
+  'this will list',
   'this will search',
   'this will run',
   'this will read',
   'this will create',
   'this will edit',
+  'list local workspace files',
+  'list files and directories',
 ] as const;
 
 const chatGptMcpPrimaryActionPatterns = [
+  'allow',
+  'approve',
+  'list entries',
   'write file',
   'run command',
   'search workspace',
@@ -59,18 +66,34 @@ function normalizeUiText(text: string): string {
   return text.trim().replace(/\s+/g, ' ').toLowerCase();
 }
 
+function compactUiText(text: string): string {
+  return normalizeUiText(text).replace(/[^\p{L}\p{N}]+/gu, '');
+}
+
 function matchesAnyPattern(text: string, patterns: readonly string[]): boolean {
   const normalizedText = normalizeUiText(text);
+  const compactText = compactUiText(text);
 
   if (!normalizedText) {
     return false;
   }
 
-  return patterns.some((pattern) => normalizedText.includes(normalizeUiText(pattern)));
+  return patterns.some((pattern) => {
+    const normalizedPattern = normalizeUiText(pattern);
+    const compactPattern = compactUiText(pattern);
+    return (
+      normalizedText.includes(normalizedPattern) ||
+      (compactPattern !== '' && compactText.includes(compactPattern))
+    );
+  });
 }
 
 export function matchesChatGptMcpPrimaryAction(text: string): boolean {
   return matchesAnyPattern(text, chatGptMcpPrimaryActionPatterns);
+}
+
+export function matchesChatGptMcpContext(text: string): boolean {
+  return matchesAnyPattern(text, chatGptMcpContextPatterns);
 }
 
 export function matchesChatGptMcpRejectAction(text: string): boolean {

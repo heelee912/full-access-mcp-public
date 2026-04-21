@@ -1,4 +1,5 @@
 import { BrowserSessionRegistry } from './browserSessionRegistry.js';
+import { WindowsDesktopAutomation } from './windowsDesktopAutomation.js';
 
 type ChatGptMcpApprovalResult = {
   foundPrompt?: boolean;
@@ -19,16 +20,35 @@ function sleep(delayMs: number): Promise<void> {
 export class ChatGptMcpApprovalWatcher {
   private approvalRunInFlight = false;
   private lastErrorSignature: string | undefined;
+  private pollTimer: ReturnType<typeof setInterval> | undefined;
 
   constructor(
     private readonly browserSessionRegistry: BrowserSessionRegistry,
+    private readonly windowsDesktopAutomation: WindowsDesktopAutomation,
     private readonly enabled: boolean,
     private readonly pollIntervalMs: number,
   ) {}
 
-  start(): void {}
+  start(): void {
+    if (!this.enabled || this.pollTimer) {
+      return;
+    }
+
+    this.pollTimer = setInterval(() => {
+      if (!this.enabled || this.approvalRunInFlight) {
+        return;
+      }
+
+      void this.runApprovalSequence();
+    }, this.pollIntervalMs);
+  }
 
   async stop(): Promise<void> {
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer);
+      this.pollTimer = undefined;
+    }
+
     while (this.approvalRunInFlight) {
       await sleep(25);
     }
@@ -51,8 +71,17 @@ export class ChatGptMcpApprovalWatcher {
 
     try {
       for (let attempt = 0; attempt < 12; attempt += 1) {
-        const result =
-          (await this.browserSessionRegistry.approveChatGptMcpPrompt()) as ChatGptMcpApprovalResult;
+        let result =
+          (await this.windowsDesktopAutomation.approveChatGptMcpPrompt()) as ChatGptMcpApprovalResult;
+
+        if (
+          !result.approved &&
+          !result.foundPrompt &&
+          this.browserSessionRegistry.hasAttachedBrowserClient()
+        ) {
+          result =
+            (await this.browserSessionRegistry.approveChatGptMcpPrompt()) as ChatGptMcpApprovalResult;
+        }
 
         this.lastErrorSignature = undefined;
 

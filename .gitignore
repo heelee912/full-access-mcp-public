@@ -3,7 +3,10 @@ dist/
 .env
 .runtime/
 .tmp/
-.tools/
+.tools/*
+!.tools/start-chrome-devtools-mcp.ps1
+!.tools/start-chrome-devtools-mcp.cjs
+!.tools/runtime-stack.ps1
 .external/
 .full-access-mcp/
 output/

@@ -93,6 +93,8 @@ Copy `.env.example` to `.env` and fill in the values.
 | `ALLOW_COMPUTER_WIDE_ACCESS` | `false` | When `true`, any absolute local Windows path is allowed |
 | `BROWSER_ENABLED` | `true` | Enables browser automation |
 | `BROWSER_HEADLESS` | `true` | Headless mode for separate Playwright sessions |
+| `CHROME_EXECUTABLE` | empty | Optional override for the local Chrome executable path |
+| `CHROME_DEVTOOLS_USER_DATA_DIR` | `%LOCALAPPDATA%\full-access-mcp\chrome-devtools-mcp-profile` | Optional dedicated Chrome profile path for DevTools attachment |
 | `CHROME_REMOTE_DEBUGGING_AUTO_ALLOW_ENABLED` | `true` | Auto-accepts Chrome remote debugging prompt |
 
 ## 5. External services
@@ -134,7 +136,7 @@ Resource Parameter Compatibility Profile = ON
 Use a reserved domain. Temporary tunnels are not stable enough for a reusable public setup.
 
 ```powershell
-ngrok http 9797 --domain=YOUR-NGROK-DOMAIN.ngrok-free.app
+ngrok http 9797 --url=YOUR-NGROK-DOMAIN.ngrok-free.app
 ```
 
 ## 6. Local setup from scratch
@@ -169,7 +171,27 @@ npm run agent:start
 ### Step 5: expose the gateway publicly
 
 ```powershell
-ngrok http 9797 --domain=YOUR-NGROK-DOMAIN.ngrok-free.app
+ngrok http 9797 --url=YOUR-NGROK-DOMAIN.ngrok-free.app
+```
+
+### Optional hidden runtime launcher
+
+If you want `gateway`, `agent`, and optional `ngrok` to stay off-screen, use:
+
+```powershell
+npm run runtime:start
+npm run runtime:status
+npm run runtime:stop
+```
+
+`runtime:start` reads these optional `.env` values:
+
+```text
+NGROK_AUTOSTART=true|false
+NGROK_URL=YOUR-NGROK-DOMAIN.ngrok-free.app
+NGROK_EXECUTABLE=C:\Path\To\ngrok.exe
+CHROME_EXECUTABLE=C:\Path\To\chrome.exe
+CHROME_DEVTOOLS_USER_DATA_DIR=C:\Path\To\dedicated-chrome-profile
 ```
 
 ### Step 6: verify health
