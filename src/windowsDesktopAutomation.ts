@@ -4,8 +4,16 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import {
-  getChromeRemoteDebuggingAllowButtonLabels,
-  getChromeRemoteDebuggingPromptFragments,
+  getChatGptMcpAppNamePatterns,
+  getChatGptMcpContextPatterns,
+  getChatGptMcpIgnoredActionPatterns,
+  getChatGptMcpPrimaryActionPatterns,
+  getChatGptMcpRejectActionPatterns,
+  getChatGptMcpRememberOptionPatterns,
+} from './chatGptMcpApproval.js';
+import {
+  getChromeRemoteDebuggingAllowButtonLabels as getChromeRemoteDebuggingAllowButtonLabelsOnly,
+  getChromeRemoteDebuggingPromptFragments as getChromeRemoteDebuggingPromptFragmentsOnly,
 } from './chromeRemoteDebuggingApproval.js';
 import { WorkspaceFileAccess } from './workspaceFileAccess.js';
 
@@ -913,8 +921,23 @@ export class WindowsDesktopAutomation {
 
   async approveChromeRemoteDebuggingPrompt(): Promise<unknown> {
     return await this.approveChromeWindowPrompt({
-      promptFragments: getChromeRemoteDebuggingPromptFragments(),
-      allowButtonLabels: getChromeRemoteDebuggingAllowButtonLabels(),
+      promptFragments: getChromeRemoteDebuggingPromptFragmentsOnly(),
+      allowButtonLabels: getChromeRemoteDebuggingAllowButtonLabelsOnly(),
+    });
+  }
+
+  async approveChatGptMcpPrompt(): Promise<unknown> {
+    return await this.approveChromeWindowPrompt({
+      promptFragments: getChatGptMcpAppNamePatterns(),
+      allowButtonLabels: [],
+      primaryActionPatterns: getChatGptMcpPrimaryActionPatterns(),
+      rejectButtonPatterns: getChatGptMcpRejectActionPatterns(),
+      ignoredButtonPatterns: getChatGptMcpIgnoredActionPatterns(),
+      requireAppNamePatterns: getChatGptMcpAppNamePatterns(),
+      contextPatterns: getChatGptMcpContextPatterns(),
+      rememberOptionPatterns: getChatGptMcpRememberOptionPatterns(),
+      autoRemember: true,
+      expectedPrimaryActionPatterns: getChatGptMcpPrimaryActionPatterns(),
     });
   }
 }

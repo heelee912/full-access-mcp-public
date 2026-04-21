@@ -53,6 +53,7 @@ export function createLocalWorkstationRuntime(
     );
   const chatGptMcpApprovalWatcher = new ChatGptMcpApprovalWatcher(
     browserSessionRegistry,
+    windowsDesktopAutomation,
     settings.chatGptMcpAutoAllowEnabled,
     settings.chatGptMcpAutoAllowPollIntervalMs,
   );
@@ -66,6 +67,7 @@ export function createLocalWorkstationRuntime(
   });
 
   chromeRemoteDebuggingApprovalWatcher.start();
+  chatGptMcpApprovalWatcher.start();
   return {
     settings,
     workspaceFileAccess,

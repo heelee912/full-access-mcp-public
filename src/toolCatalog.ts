@@ -125,6 +125,8 @@ function buildLocalWorkstationDescription(
       'Use this first for Google searches in the connected local Chrome browser instead of chaining open session, navigate, and key press tools. This tool automatically falls back to desktop address-bar control if the Chrome DevTools session is unavailable.',
     browser_approve_chatgpt_mcp_prompt:
       'Use this only to confirm that a visible Full Access MCP approval card on chatgpt.com can be approved from the current local Chrome page.',
+    desktop_approve_chatgpt_mcp_prompt:
+      'Use this first to approve a visible Full Access MCP card in the user\'s real Chrome window when browser-based approval is unavailable or stale.',
     browser_open_session:
       'Use this when a fresh local Chrome tab or session is needed.',
     browser_snapshot:
@@ -197,6 +199,7 @@ function buildLocalWorkstationTitle(toolName: string): string | undefined {
     playwright_snapshot: 'Read Playwright Page',
     desktop_list_windows: 'List Desktop Windows',
     desktop_inspect_elements: 'Inspect Desktop UI Elements',
+    desktop_approve_chatgpt_mcp_prompt: 'Approve ChatGPT MCP Prompt on Desktop',
     desktop_type_and_submit: 'Type Text and Submit',
     system_list_processes: 'List Windows Processes',
     system_launch_application: 'Launch Local Application',
@@ -1118,7 +1121,7 @@ export function createFullAccessToolCatalog(
     defineTool({
       name: 'command_run',
       description:
-        'Run a shell command and wait for completion. Use command_start_session for long-lived processes.',
+        'Run a shell command and wait for completion. Use command_start_session for long-lived processes. Do not use this to open Chrome tabs or search the web when browser_search_google or browser_open_url_in_current_chrome can do the job directly.',
       inputSchema: z.object({
         command: z.string().describe('Command or shell snippet to execute.'),
         arguments: z.array(z.string()).default([]),
@@ -1344,7 +1347,7 @@ export function createFullAccessToolCatalog(
     defineTool({
       name: 'browser_open_session',
       description:
-        'Open a browser automation session inside the currently running local Google Chrome instance. By default this opens a new tab in the existing Chrome window instead of hijacking the ChatGPT tab.',
+        'Open an advanced browser automation session inside the currently running local Google Chrome instance. Use this for multi-step browser workflows only. Prefer browser_search_google or browser_open_url_in_current_chrome for one-off searches or URL opens.',
       inputSchema: z.object({
         initialUrl: z.string().optional(),
         headless: z.boolean().optional(),
@@ -1412,7 +1415,8 @@ export function createFullAccessToolCatalog(
     }),
     defineTool({
       name: 'browser_navigate',
-      description: 'Navigate an existing browser session to a URL.',
+      description:
+        'Navigate an existing browser session to a URL. Prefer browser_search_google or browser_open_url_in_current_chrome for one-off navigation. This tool will try to recover if the saved Chrome page id became stale.',
       inputSchema: z.object({
         sessionId: z.string(),
         url: z.string().url(),
@@ -2213,6 +2217,19 @@ export function createFullAccessToolCatalog(
       },
       execute: async () => {
         return await windowsDesktopAutomation.approveChromeRemoteDebuggingPrompt();
+      },
+    }),
+    defineTool({
+      name: 'desktop_approve_chatgpt_mcp_prompt',
+      description:
+        'Find a visible Full Access MCP confirmation card in a real local Chrome window and press the exact positive action button when it is safe to do so.',
+      annotations: {
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
+      execute: async () => {
+        return await windowsDesktopAutomation.approveChatGptMcpPrompt();
       },
     }),
     defineTool({

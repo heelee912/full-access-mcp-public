@@ -66,7 +66,29 @@ Copy-Item .env.example .env
 
 Fill in `.env` using the comments in [.env.example](.env.example).
 
+Browser automation notes:
+
+- Chrome DevTools attachment uses a dedicated Chrome profile, not the user's everyday profile
+- you can override Chrome discovery with `CHROME_EXECUTABLE`
+- you can override the dedicated profile location with `CHROME_DEVTOOLS_USER_DATA_DIR`
+
 ### Run locally
+
+Preferred hidden runtime launcher:
+
+```powershell
+npm run build
+npm run runtime:start
+```
+
+Stop and inspect:
+
+```powershell
+npm run runtime:status
+npm run runtime:stop
+```
+
+Manual split-process path:
 
 Terminal 1:
 
@@ -86,7 +108,7 @@ npm run agent:start
 Terminal 3:
 
 ```powershell
-ngrok http 9797 --domain=YOUR-NGROK-DOMAIN.ngrok-free.app
+ngrok http 9797 --url=YOUR-NGROK-DOMAIN.ngrok-free.app
 ```
 
 ### Validate
@@ -118,6 +140,9 @@ Healthy output must include:
 | `npm run build` | Build the TypeScript project |
 | `npm run gateway:start` | Run the remote MCP gateway |
 | `npm run agent:start` | Run the local workstation agent |
+| `npm run runtime:start` | Start gateway, agent, and optional ngrok as hidden background processes |
+| `npm run runtime:stop` | Stop the hidden runtime stack |
+| `npm run runtime:status` | Show hidden runtime stack status and health |
 | `npm run gateway:cli` | Inspect the live gateway from the terminal |
 | `npm run developer-mode:print` | Print MCP registration metadata |
 

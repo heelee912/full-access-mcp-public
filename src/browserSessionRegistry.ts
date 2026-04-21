@@ -143,10 +143,78 @@ function isUnknownBrowserSessionError(error: unknown): boolean {
   );
 }
 
+export function isMissingChromePageError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    /(no page found|unknown page|page not found)/i.test(error.message)
+  );
+}
+
 export function buildGoogleSearchUrl(query: string): string {
   const searchUrl = new URL('https://www.google.com/search');
   searchUrl.searchParams.set('q', query);
   return searchUrl.toString();
+}
+
+export function normalizeComparableBrowserUrl(url: string): string {
+  const normalizedUrl = new URL(url);
+  normalizedUrl.hash = '';
+  return normalizedUrl.toString();
+}
+
+export function extractGoogleSearchQuery(url: string): string | undefined {
+  const parsedUrl = new URL(url);
+  const normalizedHostname = parsedUrl.hostname.toLowerCase();
+
+  if (!normalizedHostname.startsWith('www.google.') && normalizedHostname !== 'google.com') {
+    return undefined;
+  }
+
+  if (parsedUrl.pathname === '/search') {
+    return parsedUrl.searchParams.get('q') ?? undefined;
+  }
+
+  if (parsedUrl.pathname === '/sorry/index') {
+    const continuedUrl = parsedUrl.searchParams.get('continue');
+    if (!continuedUrl) {
+      return undefined;
+    }
+
+    const nestedUrl = new URL(continuedUrl);
+    if (nestedUrl.pathname !== '/search') {
+      return undefined;
+    }
+
+    return nestedUrl.searchParams.get('q') ?? undefined;
+  }
+
+  return undefined;
+}
+
+function buildComparableBrowserTargetKey(url: string): string {
+  const googleSearchQuery = extractGoogleSearchQuery(url);
+  if (googleSearchQuery) {
+    return `google-search:${googleSearchQuery}`;
+  }
+
+  return normalizeComparableBrowserUrl(url);
+}
+
+export function findReusableBrowserPage(
+  pages: BrowserPageDescriptor[],
+  targetUrl: string,
+): BrowserPageDescriptor | undefined {
+  const normalizedTargetKey = buildComparableBrowserTargetKey(targetUrl);
+  return (
+    pages.find(
+      (page) =>
+        page.selected &&
+        buildComparableBrowserTargetKey(page.url) === normalizedTargetKey,
+    ) ??
+    pages.find(
+      (page) => buildComparableBrowserTargetKey(page.url) === normalizedTargetKey,
+    )
+  );
 }
 
 function buildChatGptMcpApprovalEvaluationScript(): string {
@@ -174,9 +242,22 @@ function buildChatGptMcpApprovalEvaluationScript(): string {
     const rememberPatterns = ${rememberOptionPatterns};
     const normalize = (value) => String(value ?? '').replace(/\\s+/g, ' ').trim();
     const normalizeLower = (value) => normalize(value).toLowerCase();
+    const compact = (value) =>
+      normalizeLower(value).replace(/[^\\p{L}\\p{N}]+/gu, '');
     const matchesAny = (value, patterns) => {
       const normalized = normalizeLower(value);
-      return normalized !== '' && patterns.some((pattern) => normalized.includes(normalizeLower(pattern)));
+      const compactValue = compact(value);
+      return (
+        normalized !== '' &&
+        patterns.some((pattern) => {
+          const normalizedPattern = normalizeLower(pattern);
+          const compactPattern = compact(pattern);
+          return (
+            normalized.includes(normalizedPattern) ||
+            (compactPattern !== '' && compactValue.includes(compactPattern))
+          );
+        })
+      );
     };
     const isVisible = (element) => {
       if (!(element instanceof HTMLElement)) {
@@ -196,6 +277,18 @@ function buildChatGptMcpApprovalEvaluationScript(): string {
           element.innerText ||
           element.textContent,
       );
+    const hasPrimaryButtonClass = (element) =>
+      /(?:^|\\s)btn-primary(?:\\s|$)/i.test(element.className || '');
+    const hasSecondaryButtonClass = (element) =>
+      /(?:^|\\s)btn-secondary(?:\\s|$)/i.test(element.className || '');
+    const hasAppMarker = (element, text) => {
+      if (matchesAny(text, appPatterns)) {
+        return true;
+      }
+      return [...element.querySelectorAll('img[alt]')].some((image) =>
+        matchesAny(image.getAttribute('alt') || '', appPatterns),
+      );
+    };
     const result = {
       foundPrompt: false,
       approved: false,
@@ -212,7 +305,11 @@ function buildChatGptMcpApprovalEvaluationScript(): string {
       .filter(isVisible)
       .map((element) => {
         const text = normalize(element.innerText || element.textContent);
-        if (!matchesAny(text, appPatterns)) {
+        if (!hasAppMarker(element, text)) {
+          return null;
+        }
+        const hasContext = matchesAny(text, contextPatterns);
+        if (!hasContext) {
           return null;
         }
         const buttons = [...element.querySelectorAll('button,[role="button"]')]
@@ -226,15 +323,14 @@ function buildChatGptMcpApprovalEvaluationScript(): string {
           (button) =>
             !matchesAny(button.label, ignoredPatterns) &&
             !matchesAny(button.label, rejectPatterns) &&
-            matchesAny(button.label, primaryPatterns),
+            (matchesAny(button.label, primaryPatterns) ||
+              hasPrimaryButtonClass(button.element)),
         );
         const rejectButtons = buttons.filter((button) =>
-          matchesAny(button.label, rejectPatterns),
+          matchesAny(button.label, rejectPatterns) ||
+          hasSecondaryButtonClass(button.element),
         );
         if (positiveButtons.length === 0 || rejectButtons.length === 0) {
-          return null;
-        }
-        if (!matchesAny(text, contextPatterns) && text.length > 1200) {
           return null;
         }
         return {
@@ -261,7 +357,10 @@ function buildChatGptMcpApprovalEvaluationScript(): string {
       result.remembered = true;
       result.rememberName = getButtonLabel(rememberTarget);
     }
-    const selectedButton = selected.positiveButtons[0];
+    const selectedButton =
+      selected.positiveButtons.find((button) =>
+        hasPrimaryButtonClass(button.element),
+      ) ?? selected.positiveButtons[selected.positiveButtons.length - 1];
     if (selectedButton && selectedButton.element instanceof HTMLElement) {
       selectedButton.element.click();
       result.approved = true;
@@ -330,9 +429,14 @@ export class BrowserSessionRegistry {
     }
 
     this.browserClientPromise = (async () => {
+      const browserWrapperPath = path.join(
+        process.cwd(),
+        '.tools',
+        'start-chrome-devtools-mcp.cjs',
+      );
       const transport = new StdioClientTransport({
-        command: 'cmd.exe',
-        args: ['/c', 'npx', '-y', 'chrome-devtools-mcp@latest', '--autoConnect'],
+        command: 'node.exe',
+        args: [browserWrapperPath],
         stderr: 'pipe',
         cwd: process.cwd(),
       });
@@ -478,6 +582,46 @@ export class BrowserSessionRegistry {
     return nextSession;
   }
 
+  private async rebindDevToolsSessionToActivePage(
+    sessionId: string,
+  ): Promise<DevToolsBrowserSession> {
+    const session = this.getDevToolsSession(sessionId);
+    const pages = await this.listPages();
+    const selectedPage = pages.find((page) => page.selected) ?? pages[0];
+
+    if (!selectedPage) {
+      throw new Error('No existing Chrome page is available to rebind.');
+    }
+
+    const pageState = await this.captureDevToolsPageState(selectedPage.pageId);
+    const reboundSession: DevToolsBrowserSession = {
+      ...session,
+      pageId: selectedPage.pageId,
+      pageTitle: pageState.title,
+      pageUrl: pageState.url,
+    };
+    this.sessions.set(sessionId, reboundSession);
+    return reboundSession;
+  }
+
+  private async runWithRecoveredDevToolsSession<T>(
+    sessionId: string,
+    operation: (session: DevToolsBrowserSession) => Promise<T>,
+  ): Promise<T> {
+    let session = this.getDevToolsSession(sessionId);
+
+    try {
+      return await operation(session);
+    } catch (error) {
+      if (!isMissingChromePageError(error)) {
+        throw error;
+      }
+
+      session = await this.rebindDevToolsSessionToActivePage(sessionId);
+      return await operation(session);
+    }
+  }
+
   async listBrowserPages(): Promise<BrowserPageDescriptor[]> {
     return await this.listPages();
   }
@@ -581,11 +725,19 @@ export class BrowserSessionRegistry {
       const pages = await this.listPages();
       selectedPage = pages.find((page) => page.selected) ?? pages[0];
     } else {
-      await this.callChromeTool('new_page', {
-        url: options.initialUrl ?? 'about:blank',
-      });
       const pages = await this.listPages();
-      selectedPage = pages.find((page) => page.selected) ?? pages[0];
+      selectedPage = options.initialUrl
+        ? findReusableBrowserPage(pages, options.initialUrl)
+        : undefined;
+
+      if (!selectedPage) {
+        await this.callChromeTool('new_page', {
+          url: options.initialUrl ?? 'about:blank',
+        });
+        const refreshedPages = await this.listPages();
+        selectedPage =
+          refreshedPages.find((page) => page.selected) ?? refreshedPages[0];
+      }
     }
 
     if (!selectedPage) {
@@ -699,20 +851,27 @@ export class BrowserSessionRegistry {
     const session = this.getBrowserSession(sessionId);
 
     if (session.strategy === 'devtools') {
-      await this.selectPage(session.pageId);
-      await this.callChromeTool('navigate_page', {
-        type: 'url',
-        url,
-      });
-
-      const pageState = await this.captureDevToolsPageState(session.pageId);
-      this.updateBrowserSession(sessionId, pageState);
-
-      return {
+      return await this.runWithRecoveredDevToolsSession(
         sessionId,
-        url: pageState.url,
-        title: pageState.title,
-      };
+        async (activeSession) => {
+          await this.selectPage(activeSession.pageId);
+          await this.callChromeTool('navigate_page', {
+            type: 'url',
+            url,
+          });
+
+          const pageState = await this.captureDevToolsPageState(
+            activeSession.pageId,
+          );
+          this.updateBrowserSession(sessionId, pageState);
+
+          return {
+            sessionId,
+            url: pageState.url,
+            title: pageState.title,
+          };
+        },
+      );
     }
 
     await session.page.goto(url, {
@@ -737,7 +896,11 @@ export class BrowserSessionRegistry {
     const session = this.getBrowserSession(sessionId);
     const pageState =
       session.strategy === 'devtools'
-        ? await this.captureDevToolsPageState(session.pageId)
+        ? await this.runWithRecoveredDevToolsSession(
+            sessionId,
+            async (activeSession) =>
+              await this.captureDevToolsPageState(activeSession.pageId),
+          )
         : await this.capturePlaywrightPageState(session.page);
 
     this.updateBrowserSession(sessionId, pageState);
@@ -757,36 +920,41 @@ export class BrowserSessionRegistry {
     const session = this.getBrowserSession(sessionId);
 
     if (session.strategy === 'devtools') {
-      await this.selectPage(session.pageId);
-
-      const toolResult = await this.callChromeTool('evaluate_script', {
-        function: `() => {
-          const target = document.querySelector(${JSON.stringify(selector)});
-          if (!(target instanceof Element)) {
-            throw new Error('No element matched selector: ${selector.replaceAll("'", "\\'")}');
-          }
-          target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, composed: true }));
-          if (typeof target.click === 'function') {
-            target.click();
-          }
-          return { url: location.href };
-        }`,
-      });
-
-      const parsed = parseJsonCodeBlock<{ url?: string }>(
-        extractTextContent(toolResult),
-      );
-      const nextUrl = parsed?.url ?? session.pageUrl;
-      this.sessions.set(sessionId, {
-        ...session,
-        pageUrl: nextUrl,
-      });
-
-      return {
+      return await this.runWithRecoveredDevToolsSession(
         sessionId,
-        selector,
-        url: nextUrl,
-      };
+        async (activeSession) => {
+          await this.selectPage(activeSession.pageId);
+
+          const toolResult = await this.callChromeTool('evaluate_script', {
+            function: `() => {
+              const target = document.querySelector(${JSON.stringify(selector)});
+              if (!(target instanceof Element)) {
+                throw new Error('No element matched selector: ${selector.replaceAll("'", "\\'")}');
+              }
+              target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, composed: true }));
+              if (typeof target.click === 'function') {
+                target.click();
+              }
+              return { url: location.href };
+            }`,
+          });
+
+          const parsed = parseJsonCodeBlock<{ url?: string }>(
+            extractTextContent(toolResult),
+          );
+          const nextUrl = parsed?.url ?? activeSession.pageUrl;
+          this.sessions.set(sessionId, {
+            ...activeSession,
+            pageUrl: nextUrl,
+          });
+
+          return {
+            sessionId,
+            selector,
+            url: nextUrl,
+          };
+        },
+      );
     }
 
     await session.page.locator(selector).first().click();
@@ -810,37 +978,42 @@ export class BrowserSessionRegistry {
     const session = this.getBrowserSession(sessionId);
 
     if (session.strategy === 'devtools') {
-      await this.selectPage(session.pageId);
-
-      await this.callChromeTool('evaluate_script', {
-        function: `() => {
-          const target = document.querySelector(${JSON.stringify(selector)});
-          if (!(target instanceof HTMLElement)) {
-            throw new Error('No element matched selector: ${selector.replaceAll("'", "\\'")}');
-          }
-          target.focus();
-          if ('value' in target) {
-            target.value = ${JSON.stringify(value)};
-          } else {
-            target.textContent = ${JSON.stringify(value)};
-          }
-          target.dispatchEvent(new Event('input', { bubbles: true }));
-          target.dispatchEvent(new Event('change', { bubbles: true }));
-          if (${submit ? 'true' : 'false'}) {
-            const form = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement
-              ? target.form
-              : target.closest('form');
-            form?.requestSubmit?.();
-          }
-          return { ok: true };
-        }`,
-      });
-
-      return {
+      return await this.runWithRecoveredDevToolsSession(
         sessionId,
-        selector,
-        submitted: submit,
-      };
+        async (activeSession) => {
+          await this.selectPage(activeSession.pageId);
+
+          await this.callChromeTool('evaluate_script', {
+            function: `() => {
+              const target = document.querySelector(${JSON.stringify(selector)});
+              if (!(target instanceof HTMLElement)) {
+                throw new Error('No element matched selector: ${selector.replaceAll("'", "\\'")}');
+              }
+              target.focus();
+              if ('value' in target) {
+                target.value = ${JSON.stringify(value)};
+              } else {
+                target.textContent = ${JSON.stringify(value)};
+              }
+              target.dispatchEvent(new Event('input', { bubbles: true }));
+              target.dispatchEvent(new Event('change', { bubbles: true }));
+              if (${submit ? 'true' : 'false'}) {
+                const form = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement
+                  ? target.form
+                  : target.closest('form');
+                form?.requestSubmit?.();
+              }
+              return { ok: true };
+            }`,
+          });
+
+          return {
+            sessionId,
+            selector,
+            submitted: submit,
+          };
+        },
+      );
     }
 
     const locator = session.page.locator(selector).first();
@@ -864,8 +1037,18 @@ export class BrowserSessionRegistry {
     const session = this.getBrowserSession(sessionId);
 
     if (session.strategy === 'devtools') {
-      await this.selectPage(session.pageId);
-      await this.callChromeTool('press_key', { key });
+      return await this.runWithRecoveredDevToolsSession(
+        sessionId,
+        async (activeSession) => {
+          await this.selectPage(activeSession.pageId);
+          await this.callChromeTool('press_key', { key });
+
+          return {
+            sessionId,
+            key,
+          };
+        },
+      );
     } else {
       await session.page.keyboard.press(key);
       await session.page.waitForLoadState('domcontentloaded').catch(() => {});
@@ -884,19 +1067,24 @@ export class BrowserSessionRegistry {
     const session = this.getBrowserSession(sessionId);
 
     if (session.strategy === 'devtools') {
-      await this.selectPage(session.pageId);
-
-      const toolResult = await this.callChromeTool('evaluate_script', {
-        function: `() => ({ result: globalThis.eval(${JSON.stringify(expression)}) })`,
-      });
-      const parsed = parseJsonCodeBlock<{ result?: unknown }>(
-        extractTextContent(toolResult),
-      );
-
-      return {
+      return await this.runWithRecoveredDevToolsSession(
         sessionId,
-        result: parsed?.result,
-      };
+        async (activeSession) => {
+          await this.selectPage(activeSession.pageId);
+
+          const toolResult = await this.callChromeTool('evaluate_script', {
+            function: `() => ({ result: globalThis.eval(${JSON.stringify(expression)}) })`,
+          });
+          const parsed = parseJsonCodeBlock<{ result?: unknown }>(
+            extractTextContent(toolResult),
+          );
+
+          return {
+            sessionId,
+            result: parsed?.result,
+          };
+        },
+      );
     }
 
     return {
@@ -925,12 +1113,17 @@ export class BrowserSessionRegistry {
     await fs.mkdir(path.dirname(targetPath), { recursive: true });
 
     if (session.strategy === 'devtools') {
-      await this.selectPage(session.pageId);
-      await this.callChromeTool('take_screenshot', {
-        filePath: targetPath,
-        fullPage: options.fullPage ?? true,
-        format: options.type ?? 'png',
-      });
+      await this.runWithRecoveredDevToolsSession(
+        options.sessionId,
+        async (activeSession) => {
+          await this.selectPage(activeSession.pageId);
+          await this.callChromeTool('take_screenshot', {
+            filePath: targetPath,
+            fullPage: options.fullPage ?? true,
+            format: options.type ?? 'png',
+          });
+        },
+      );
     } else {
       await session.page.screenshot({
         path: targetPath,
@@ -977,6 +1170,10 @@ export class BrowserSessionRegistry {
       storagePath: session.storagePath,
       strategy: session.strategy,
     }));
+  }
+
+  hasAttachedBrowserClient(): boolean {
+    return Boolean(this.browserClient || this.browserClientPromise);
   }
 
   async closeAll(): Promise<void> {
