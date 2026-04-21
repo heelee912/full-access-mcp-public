@@ -14,7 +14,7 @@
 - [ ] no secrets were added
 - [ ] no runtime logs or screenshots were added
 - [ ] no private local paths were added to committed files
-- [ ] the supported deployment path is still `gatewayIndex.ts + agentIndex.ts`
+- [ ] the supported deployment path is still `gatewayIndex.ts + agentIndex.ts + toolCatalog.ts`
 
 ## Notes for reviewers
 
