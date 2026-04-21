@@ -15,6 +15,8 @@ test('matches Full Access MCP card labels', () => {
   assert.equal(matchesChatGptMcpPrimaryAction('Search Workspace'), true);
   assert.equal(matchesChatGptMcpPrimaryAction('Run Command'), true);
   assert.equal(matchesChatGptMcpPrimaryAction('List Entries'), true);
+  assert.equal(matchesChatGptMcpPrimaryAction('Open Browser Session'), true);
+  assert.equal(matchesChatGptMcpPrimaryAction('Take Screenshot'), true);
   assert.equal(matchesChatGptMcpPrimaryAction('Allow'), true);
   assert.equal(matchesChatGptMcpRejectAction('Deny'), true);
   assert.equal(matchesChatGptMcpIgnoredAction('Details'), true);
@@ -34,6 +36,12 @@ test('matches current approval card context strings', () => {
   assert.equal(
     matchesChatGptMcpContext(
       'This will execute a PowerShell command on your local Windows PC to open Chrome or a browser to search Google.',
+    ),
+    true,
+  );
+  assert.equal(
+    matchesChatGptMcpContext(
+      'This will open a persistent Chromium browser on your local Windows PC with full computer-wide access.',
     ),
     true,
   );

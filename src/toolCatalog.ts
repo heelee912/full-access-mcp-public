@@ -5,6 +5,7 @@ import { z, type ZodTypeAny } from 'zod';
 import {
   BrowserSessionRegistry,
   buildGoogleSearchUrl,
+  extractGoogleSearchQuery,
 } from './browserSessionRegistry.js';
 import { CommandSessionRegistry } from './commandSessionRegistry.js';
 import {
@@ -55,6 +56,17 @@ export interface FullAccessToolCatalog {
   executeToolCall: (name: string, input: unknown) => Promise<unknown>;
 }
 
+type BrowserLaunchIntent =
+  | {
+      kind: 'google-search';
+      query: string;
+      url: string;
+    }
+  | {
+      kind: 'open-url';
+      url: string;
+    };
+
 const projectSummaryCandidateNames = [
   'README.md',
   'README',
@@ -69,6 +81,77 @@ const projectSummaryCandidateNames = [
   'build.gradle',
   'build.gradle.kts',
 ];
+
+function normalizeUrlCandidate(candidate: string): URL | undefined {
+  const trimmedCandidate = candidate.trim();
+  if (trimmedCandidate === '') {
+    return undefined;
+  }
+
+  const candidateVariants = [
+    trimmedCandidate,
+    trimmedCandidate.replace(/ /g, '%20'),
+  ];
+
+  for (const variant of candidateVariants) {
+    try {
+      return new URL(variant);
+    } catch {
+      continue;
+    }
+  }
+
+  return undefined;
+}
+
+export function inferBrowserLaunchIntentFromCommand(options: {
+  command: string;
+  arguments: string[];
+}): BrowserLaunchIntent | undefined {
+  const combinedText = [options.command, ...options.arguments].join(' ').trim();
+  if (combinedText === '') {
+    return undefined;
+  }
+
+  if (
+    !/\b(start-process|chrome(?:\.exe)?|msedge(?:\.exe)?|firefox(?:\.exe)?|browser)\b/i.test(
+      combinedText,
+    )
+  ) {
+    return undefined;
+  }
+
+  const quotedUrlMatches = [...combinedText.matchAll(/['"](https?:\/\/[^'"]+)['"]/gi)]
+    .map((match) => match[1] ?? '')
+    .filter((match) => match !== '');
+  const bareUrlMatches = [...combinedText.matchAll(/https?:\/\/\S+/gi)].map(
+    (match) => match[0] ?? '',
+  );
+
+  const urlCandidates = [...quotedUrlMatches, ...bareUrlMatches];
+  for (const candidate of urlCandidates) {
+    const normalizedUrl = normalizeUrlCandidate(candidate);
+    if (!normalizedUrl) {
+      continue;
+    }
+
+    const googleSearchQuery = extractGoogleSearchQuery(normalizedUrl.toString());
+    if (googleSearchQuery) {
+      return {
+        kind: 'google-search',
+        query: googleSearchQuery,
+        url: normalizedUrl.toString(),
+      };
+    }
+
+    return {
+      kind: 'open-url',
+      url: normalizedUrl.toString(),
+    };
+  }
+
+  return undefined;
+}
 
 function toProjectSignal(rootEntryNames: string[]): Record<string, boolean> {
   const rootEntryNameSet = new Set(rootEntryNames.map((name) => name.toLowerCase()));
@@ -1146,6 +1229,53 @@ export function createFullAccessToolCatalog(
             environment: z.record(z.string(), z.string()).default({}),
           })
           .parse(input);
+
+        const browserLaunchIntent = inferBrowserLaunchIntentFromCommand(parsed);
+        if (browserLaunchIntent?.kind === 'google-search') {
+          const browserResult = await searchGoogleWithChromeFallback({
+            query: browserLaunchIntent.query,
+            attachSelectedPage: false,
+            bringToFront: true,
+            allowDesktopFallback: true,
+          });
+
+          return {
+            commandLine: [parsed.command, ...parsed.arguments].join(' '),
+            cwd: parsed.cwd,
+            stdout: '',
+            stderr: '',
+            exitCode: 0,
+            signalCode: null,
+            timedOut: false,
+            reroutedTo: 'browser_search_google',
+            reroutedReason:
+              'browser launch command was converted to the dedicated local Chrome Google search tool',
+            browserResult,
+          };
+        }
+
+        if (browserLaunchIntent?.kind === 'open-url') {
+          const browserResult = await openUrlInChromeWithFallback({
+            url: browserLaunchIntent.url,
+            attachSelectedPage: false,
+            bringToFront: true,
+            allowDesktopFallback: true,
+          });
+
+          return {
+            commandLine: [parsed.command, ...parsed.arguments].join(' '),
+            cwd: parsed.cwd,
+            stdout: '',
+            stderr: '',
+            exitCode: 0,
+            signalCode: null,
+            timedOut: false,
+            reroutedTo: 'browser_open_url_in_current_chrome',
+            reroutedReason:
+              'browser launch command was converted to the dedicated local Chrome URL-open tool',
+            browserResult,
+          };
+        }
 
         return await commandSessionRegistry.runCommand(parsed);
       },
