@@ -277,6 +277,12 @@ function buildChatGptMcpApprovalEvaluationScript(): string {
           element.innerText ||
           element.textContent,
       );
+    const getButtonRightEdge = (element) => {
+      if (!(element instanceof HTMLElement)) {
+        return Number.NEGATIVE_INFINITY;
+      }
+      return element.getBoundingClientRect().right;
+    };
     const hasPrimaryButtonClass = (element) =>
       /(?:^|\\s)btn-primary(?:\\s|$)/i.test(element.className || '');
     const hasSecondaryButtonClass = (element) =>
@@ -322,9 +328,7 @@ function buildChatGptMcpApprovalEvaluationScript(): string {
         const positiveButtons = buttons.filter(
           (button) =>
             !matchesAny(button.label, ignoredPatterns) &&
-            !matchesAny(button.label, rejectPatterns) &&
-            (matchesAny(button.label, primaryPatterns) ||
-              hasPrimaryButtonClass(button.element)),
+            !matchesAny(button.label, rejectPatterns),
         );
         const rejectButtons = buttons.filter((button) =>
           matchesAny(button.label, rejectPatterns) ||
@@ -358,9 +362,21 @@ function buildChatGptMcpApprovalEvaluationScript(): string {
       result.rememberName = getButtonLabel(rememberTarget);
     }
     const selectedButton =
-      selected.positiveButtons.find((button) =>
-        hasPrimaryButtonClass(button.element),
-      ) ?? selected.positiveButtons[selected.positiveButtons.length - 1];
+      selected.positiveButtons
+        .slice()
+        .sort((left, right) => {
+          const leftPrimary =
+            hasPrimaryButtonClass(left.element) ||
+            matchesAny(left.label, primaryPatterns);
+          const rightPrimary =
+            hasPrimaryButtonClass(right.element) ||
+            matchesAny(right.label, primaryPatterns);
+          if (leftPrimary !== rightPrimary) {
+            return leftPrimary ? -1 : 1;
+          }
+
+          return getButtonRightEdge(right.element) - getButtonRightEdge(left.element);
+        })[0];
     if (selectedButton && selectedButton.element instanceof HTMLElement) {
       selectedButton.element.click();
       result.approved = true;

@@ -7,6 +7,7 @@ import {
   matchesChatGptMcpIgnoredAction,
   matchesChatGptMcpPrimaryAction,
   matchesChatGptMcpRejectAction,
+  matchesChatGptMcpWindowTitleHint,
 } from '../src/chatGptMcpApproval.js';
 
 test('matches Full Access MCP card labels', () => {
@@ -56,6 +57,8 @@ test('matches current approval card context strings', () => {
 
 test('tolerates spacing noise in app and action labels', () => {
   assert.equal(matchesChatGptMcpAppName('Full   Access   MCP'), true);
+  assert.equal(matchesChatGptMcpWindowTitleHint('ChatGPT - Chrome'), true);
+  assert.equal(matchesChatGptMcpWindowTitleHint('MCP 권한 요청 - Chrome'), true);
   assert.equal(matchesChatGptMcpPrimaryAction('List    Entries'), true);
   assert.equal(matchesChatGptMcpPrimaryAction('Allow  '), true);
 });

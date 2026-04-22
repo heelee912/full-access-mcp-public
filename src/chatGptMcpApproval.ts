@@ -1,5 +1,7 @@
 const chatGptMcpAppNamePatterns = ['full access mcp'] as const;
 
+const chatGptMcpWindowTitlePatterns = ['chatgpt', 'mcp'] as const;
+
 const chatGptMcpContextPatterns = [
   'sharing data includes',
   'using tools comes with risks',
@@ -119,8 +121,16 @@ export function matchesChatGptMcpAppName(text: string): boolean {
   return matchesAnyPattern(text, chatGptMcpAppNamePatterns);
 }
 
+export function matchesChatGptMcpWindowTitleHint(text: string): boolean {
+  return matchesAnyPattern(text, chatGptMcpWindowTitlePatterns);
+}
+
 export function getChatGptMcpAppNamePatterns(): string[] {
   return [...chatGptMcpAppNamePatterns];
+}
+
+export function getChatGptMcpWindowTitlePatterns(): string[] {
+  return [...chatGptMcpWindowTitlePatterns];
 }
 
 export function getChatGptMcpContextPatterns(): string[] {
