@@ -176,19 +176,42 @@ function Start-HiddenProcess {
         [string[]]$ArgumentList,
         [string]$WorkingDirectory,
         [string]$StdOutPath,
-        [string]$StdErrPath
+        [string]$StdErrPath,
+        [hashtable]$EnvironmentVariables = @{}
     )
 
     Ensure-RuntimeDirectory
 
-    return Start-Process `
-        -FilePath $FilePath `
-        -ArgumentList $ArgumentList `
-        -WorkingDirectory $WorkingDirectory `
-        -WindowStyle Hidden `
-        -RedirectStandardOutput $StdOutPath `
-        -RedirectStandardError $StdErrPath `
-        -PassThru
+    $previousValues = @{}
+
+    try {
+        foreach ($entry in $EnvironmentVariables.GetEnumerator()) {
+            $key = [string]$entry.Key
+            $previousValues[$key] = [Environment]::GetEnvironmentVariable($key, 'Process')
+            [Environment]::SetEnvironmentVariable($key, [string]$entry.Value, 'Process')
+        }
+
+        return Start-Process `
+            -FilePath $FilePath `
+            -ArgumentList $ArgumentList `
+            -WorkingDirectory $WorkingDirectory `
+            -WindowStyle Hidden `
+            -RedirectStandardOutput $StdOutPath `
+            -RedirectStandardError $StdErrPath `
+            -PassThru
+    }
+    finally {
+        foreach ($entry in $previousValues.GetEnumerator()) {
+            $key = [string]$entry.Key
+            $value = [string]$entry.Value
+            if ([string]::IsNullOrEmpty($value)) {
+                [Environment]::SetEnvironmentVariable($key, $null, 'Process')
+                continue
+            }
+
+            [Environment]::SetEnvironmentVariable($key, $value, 'Process')
+        }
+    }
 }
 
 function Invoke-HealthCheck {
@@ -262,12 +285,17 @@ function Show-Status {
         $health = Invoke-HealthCheck -Port ([int]$state.gateway.port)
     }
 
+    $ngrokRecord = $null
+    if ($state.PSObject.Properties.Name -contains 'ngrok') {
+        $ngrokRecord = $state.ngrok
+    }
+
     [pscustomobject]@{
         running = $true
         startedAt = $state.startedAt
         gateway = Get-ProcessState -Name 'gateway' -ProcessRecord $state.gateway
         agent = Get-ProcessState -Name 'agent' -ProcessRecord $state.agent
-        ngrok = if ($state.ngrok) { Get-ProcessState -Name 'ngrok' -ProcessRecord $state.ngrok } else { $null }
+        ngrok = if ($ngrokRecord) { Get-ProcessState -Name 'ngrok' -ProcessRecord $ngrokRecord } else { $null }
         health = $health
     } | ConvertTo-Json -Depth 8
 }
@@ -278,7 +306,7 @@ function Stop-RuntimeStack {
         return
     }
 
-    if ($state.ngrok) {
+    if ($state.PSObject.Properties.Name -contains 'ngrok' -and $state.ngrok) {
         [void](Stop-ProcessIfRunning -ProcessId ([int]$state.ngrok.pid))
     }
 
@@ -325,7 +353,8 @@ function Start-RuntimeStack {
             -ArgumentList @('dist/src/gatewayIndex.js') `
             -WorkingDirectory $script:RepoRoot `
             -StdOutPath $gatewayStdOutPath `
-            -StdErrPath $gatewayStdErrPath
+            -StdErrPath $gatewayStdErrPath `
+            -EnvironmentVariables $dotEnv
 
         Wait-ForGatewayStartupLog -LogPath $gatewayStdOutPath -GatewayProcessId $gatewayProcess.Id
 
@@ -334,7 +363,8 @@ function Start-RuntimeStack {
             -ArgumentList @('dist/src/agentIndex.js') `
             -WorkingDirectory $script:RepoRoot `
             -StdOutPath $agentStdOutPath `
-            -StdErrPath $agentStdErrPath
+            -StdErrPath $agentStdErrPath `
+            -EnvironmentVariables $dotEnv
 
         $state = @{
             startedAt = (Get-Date).ToString('o')
@@ -369,7 +399,8 @@ function Start-RuntimeStack {
                 -ArgumentList @('http', [string]$gatewayPort, "--url=$ngrokDomain") `
                 -WorkingDirectory $script:RepoRoot `
                 -StdOutPath (Join-Path $script:RuntimeDir 'ngrok.out.log') `
-                -StdErrPath (Join-Path $script:RuntimeDir 'ngrok.err.log')
+                -StdErrPath (Join-Path $script:RuntimeDir 'ngrok.err.log') `
+                -EnvironmentVariables $dotEnv
 
             $state.ngrok = @{
                 pid = $ngrokProcess.Id

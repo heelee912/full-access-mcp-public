@@ -34,6 +34,10 @@ export class ChatGptMcpApprovalWatcher {
       return;
     }
 
+    console.info(
+      `arming ChatGPT MCP approval watcher (interval=${String(this.pollIntervalMs)}ms)`,
+    );
+
     this.pollTimer = setInterval(() => {
       if (!this.enabled || this.approvalRunInFlight) {
         return;
@@ -71,16 +75,25 @@ export class ChatGptMcpApprovalWatcher {
 
     try {
       for (let attempt = 0; attempt < 12; attempt += 1) {
-        let result =
+        const desktopResult =
           (await this.windowsDesktopAutomation.approveChatGptMcpPrompt()) as ChatGptMcpApprovalResult;
+        let result = desktopResult;
 
-        if (
-          !result.approved &&
-          !result.foundPrompt &&
-          this.browserSessionRegistry.hasAttachedBrowserClient()
-        ) {
-          result =
+        if (!desktopResult.approved && this.browserSessionRegistry.hasAttachedBrowserClient()) {
+          const browserResult =
             (await this.browserSessionRegistry.approveChatGptMcpPrompt()) as ChatGptMcpApprovalResult;
+
+          result = browserResult.approved
+            ? browserResult
+            : {
+                ...browserResult,
+                foundPrompt: Boolean(desktopResult.foundPrompt || browserResult.foundPrompt),
+                remembered: Boolean(desktopResult.remembered || browserResult.remembered),
+                buttonName: browserResult.buttonName ?? desktopResult.buttonName,
+                pageId: browserResult.pageId ?? desktopResult.pageId,
+                url: browserResult.url ?? desktopResult.url,
+                reason: browserResult.reason ?? desktopResult.reason,
+              };
         }
 
         this.lastErrorSignature = undefined;

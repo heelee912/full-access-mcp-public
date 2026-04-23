@@ -4,7 +4,6 @@ import { z, type ZodTypeAny } from 'zod';
 
 import {
   BrowserSessionRegistry,
-  buildGoogleSearchUrl,
 } from './browserSessionRegistry.js';
 import { CommandSessionRegistry } from './commandSessionRegistry.js';
 import {
@@ -108,7 +107,7 @@ function buildLocalWorkstationDescription(
     workspace_write_text:
       'Prefer this over terminal redirection when updating a specific local text file.',
     command_run:
-      'Use this for one-shot PowerShell or shell commands on the local Windows PC when the user explicitly asks for terminal work.',
+      'Use this for one-shot PowerShell or shell commands on the local Windows PC when the user explicitly asks for terminal work. Do not use this as the primary path for browser navigation or web browsing.',
     command_run_script:
       'Use this for multi-line PowerShell or shell scripts on the local Windows PC.',
     command_start_session:
@@ -119,22 +118,18 @@ function buildLocalWorkstationDescription(
       'Use this to continue an interactive local process that is already running.',
     browser_attach_selected_page:
       'Use this to work with the user\'s current local Chrome page instead of opening a separate browser.',
-    browser_open_url_in_current_chrome:
-      'Use this when the user wants the connected local Chrome browser to open a URL without managing browser session ids manually. This tool automatically falls back to desktop address-bar control if the Chrome DevTools session is unavailable.',
-    browser_search_google:
-      'Use this first for Google searches in the connected local Chrome browser instead of chaining open session, navigate, and key press tools. This tool automatically falls back to desktop address-bar control if the Chrome DevTools session is unavailable.',
     browser_approve_chatgpt_mcp_prompt:
       'Use this only to confirm that a visible Full Access MCP approval card on chatgpt.com can be approved from the current local Chrome page.',
     desktop_approve_chatgpt_mcp_prompt:
       'Use this first to approve a visible Full Access MCP card in the user\'s real Chrome window when browser-based approval is unavailable or stale.',
     browser_open_session:
-      'Use this when a fresh local Chrome tab or session is needed.',
+      'Use this as the primary entrypoint for real browser exploration and multi-step browsing in the local Chrome session.',
     browser_snapshot:
       'Use this to read the current local Chrome page after navigation or interaction.',
     desktop_type_and_submit:
       'Use this instead of separate desktop typing and Enter key tools when text entry must be submitted immediately.',
     playwright_open_session:
-      'Use this when a separate automation browser is more reliable than the user\'s live Chrome session.',
+      'Use this when a separate automation browser is the better primary lane than the user\'s live Chrome session.',
   };
 
   if (toolName === 'server_describe') {
@@ -168,6 +163,59 @@ function buildLocalWorkstationDescription(
   return normalizedDescription;
 }
 
+function buildTrustedSingleUserDescription(
+  toolName: string,
+  description: string,
+): string {
+  const normalizedDescription = description.trim().replace(/\.$/, '');
+
+  const explicitDescriptionByToolName: Record<string, string> = {
+    server_describe:
+      'Read current local workstation context, available tool lanes, and connection state.',
+    browser_open_session:
+      'Use the local Chrome connector on the connected local Windows PC for primary browser work.',
+    browser_snapshot:
+      'Use the local Chrome connector on the connected local Windows PC to read current browser context.',
+    browser_list_pages:
+      'Use the local Chrome connector on the connected local Windows PC to inspect current browser context.',
+    playwright_open_session:
+      'Use the local Playwright connector on the connected local Windows PC for scripted browser work.',
+    playwright_snapshot:
+      'Use the local Playwright connector on the connected local Windows PC to read current browser context.',
+  };
+
+  const explicitDescription = explicitDescriptionByToolName[toolName];
+  if (explicitDescription) {
+    return explicitDescription;
+  }
+
+  if (toolName.startsWith('workspace_')) {
+    return 'Use the local context connector on the connected local Windows PC for project-scoped context work.';
+  }
+
+  if (toolName.startsWith('command_')) {
+    return 'Use the local terminal connector on the connected local Windows PC for shell and process work.';
+  }
+
+  if (toolName.startsWith('browser_')) {
+    return 'Use the local Chrome connector on the connected local Windows PC for browser work.';
+  }
+
+  if (toolName.startsWith('playwright_')) {
+    return 'Use the local Playwright connector on the connected local Windows PC for browser automation work.';
+  }
+
+  if (toolName.startsWith('desktop_')) {
+    return 'Use the local Windows desktop connector on the connected local Windows PC for UI work.';
+  }
+
+  if (toolName.startsWith('system_')) {
+    return 'Use the local Windows system connector on the connected local Windows PC for operating system work.';
+  }
+
+  return normalizedDescription;
+}
+
 function buildLocalWorkstationTitle(toolName: string): string | undefined {
   const explicitTitleByToolName: Record<string, string> = {
     server_describe: 'Get Local Workstation Status',
@@ -188,8 +236,6 @@ function buildLocalWorkstationTitle(toolName: string): string | undefined {
     command_write_session: 'Send Input to Interactive Process',
     command_stop_session: 'Stop Interactive Process',
     browser_attach_selected_page: 'Attach Current Chrome Page',
-    browser_open_url_in_current_chrome: 'Open URL in Current Chrome',
-    browser_search_google: 'Search Google in Current Chrome',
     browser_approve_chatgpt_mcp_prompt: 'Approve ChatGPT MCP Prompt',
     browser_open_session: 'Open Local Chrome Session',
     browser_list_pages: 'List Open Chrome Pages',
@@ -241,16 +287,55 @@ function buildLocalWorkstationTitle(toolName: string): string | undefined {
   return undefined;
 }
 
+function buildTrustedSingleUserTitle(toolName: string): string | undefined {
+  if (toolName === 'server_describe') {
+    return 'Local Workstation';
+  }
+
+  if (toolName.startsWith('workspace_')) {
+    return 'Local Context';
+  }
+
+  if (toolName.startsWith('command_')) {
+    return 'Local Terminal';
+  }
+
+  if (toolName.startsWith('browser_')) {
+    return 'Local Browser';
+  }
+
+  if (toolName.startsWith('playwright_')) {
+    return 'Playwright Browser';
+  }
+
+  if (toolName.startsWith('desktop_')) {
+    return 'Local Desktop';
+  }
+
+  if (toolName.startsWith('system_')) {
+    return 'Local System';
+  }
+
+  return buildLocalWorkstationTitle(toolName);
+}
+
 function defineTool(definition: FullAccessToolDefinition): FullAccessToolDefinition {
+  const trustedSingleUserAnnotations: FullAccessToolAnnotations = {
+    ...definition.annotations,
+    readOnlyHint: true,
+    destructiveHint: false,
+    openWorldHint: false,
+  };
+
   return {
     ...definition,
-    description: buildLocalWorkstationDescription(
+    description: buildTrustedSingleUserDescription(
       definition.name,
       definition.description,
     ),
     annotations: {
-      title: buildLocalWorkstationTitle(definition.name),
-      ...definition.annotations,
+      title: buildTrustedSingleUserTitle(definition.name),
+      ...trustedSingleUserAnnotations,
     },
   };
 }
@@ -368,7 +453,7 @@ export function createFullAccessToolCatalog(
     bringToFront: boolean;
     allowDesktopFallback: boolean;
   }) => {
-    const searchUrl = buildGoogleSearchUrl(options.query);
+    const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(options.query)}`;
     const browserResult = await openUrlInChromeWithFallback({
       url: searchUrl,
       attachSelectedPage: options.attachSelectedPage,
@@ -1121,7 +1206,7 @@ export function createFullAccessToolCatalog(
     defineTool({
       name: 'command_run',
       description:
-        'Run a shell command and wait for completion. Use command_start_session for long-lived processes. Do not use this to open Chrome tabs or search the web when browser_search_google or browser_open_url_in_current_chrome can do the job directly.',
+        'Run a shell command and wait for completion. Use command_start_session for long-lived processes. Do not use this as the primary tool for Chrome navigation, web browsing, or browser result inspection.',
       inputSchema: z.object({
         command: z.string().describe('Command or shell snippet to execute.'),
         arguments: z.array(z.string()).default([]),
@@ -1293,12 +1378,12 @@ export function createFullAccessToolCatalog(
     defineTool({
       name: 'browser_open_url_in_current_chrome',
       description:
-        'Open a URL in the connected local Google Chrome browser and return the resulting page snapshot. This hides browser session creation and stale-session retries inside the server, and can fall back to desktop address-bar control when needed.',
+        'Open a URL in the connected local Google Chrome browser as a one-shot convenience action. Use browser_open_session when the task is real browsing, inspection, or multi-step navigation.',
       inputSchema: z.object({
         url: z.string().url(),
         attachSelectedPage: z.boolean().default(false),
         bringToFront: z.boolean().default(true),
-        allowDesktopFallback: z.boolean().default(true),
+        allowDesktopFallback: z.boolean().default(false),
       }),
       annotations: {
         destructiveHint: true,
@@ -1311,7 +1396,7 @@ export function createFullAccessToolCatalog(
             url: z.string().url(),
             attachSelectedPage: z.boolean().default(false),
             bringToFront: z.boolean().default(true),
-            allowDesktopFallback: z.boolean().default(true),
+            allowDesktopFallback: z.boolean().default(false),
           })
           .parse(input);
         return await openUrlInChromeWithFallback(parsed);
@@ -1320,12 +1405,12 @@ export function createFullAccessToolCatalog(
     defineTool({
       name: 'browser_search_google',
       description:
-        'Search Google in the connected local Chrome browser and return the resulting page snapshot. This hides URL construction, browser session creation, stale-session retries, and desktop fallback inside the server.',
+        'Search Google in the connected local Chrome browser as a one-shot convenience action. Use browser_open_session when the task is real browsing, result inspection, or follow-up navigation.',
       inputSchema: z.object({
         query: z.string().min(1),
         attachSelectedPage: z.boolean().default(false),
         bringToFront: z.boolean().default(true),
-        allowDesktopFallback: z.boolean().default(true),
+        allowDesktopFallback: z.boolean().default(false),
       }),
       annotations: {
         destructiveHint: true,
@@ -1338,7 +1423,7 @@ export function createFullAccessToolCatalog(
             query: z.string().min(1),
             attachSelectedPage: z.boolean().default(false),
             bringToFront: z.boolean().default(true),
-            allowDesktopFallback: z.boolean().default(true),
+            allowDesktopFallback: z.boolean().default(false),
           })
           .parse(input);
         return await searchGoogleWithChromeFallback(parsed);
@@ -1347,7 +1432,7 @@ export function createFullAccessToolCatalog(
     defineTool({
       name: 'browser_open_session',
       description:
-        'Open an advanced browser automation session inside the currently running local Google Chrome instance. Use this for multi-step browser workflows only. Prefer browser_search_google or browser_open_url_in_current_chrome for one-off searches or URL opens.',
+        'Open an advanced browser automation session inside the currently running local Google Chrome instance. Use this as the primary tool for real browsing, exploration, and multi-step browser workflows.',
       inputSchema: z.object({
         initialUrl: z.string().optional(),
         headless: z.boolean().optional(),
@@ -1416,7 +1501,7 @@ export function createFullAccessToolCatalog(
     defineTool({
       name: 'browser_navigate',
       description:
-        'Navigate an existing browser session to a URL. Prefer browser_search_google or browser_open_url_in_current_chrome for one-off navigation. This tool will try to recover if the saved Chrome page id became stale.',
+        'Navigate an existing browser session to a URL. Use this inside an already opened browser session, and inspect session state before retrying the same failed navigation unchanged.',
       inputSchema: z.object({
         sessionId: z.string(),
         url: z.string().url(),

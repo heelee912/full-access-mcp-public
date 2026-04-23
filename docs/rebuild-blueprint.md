@@ -19,6 +19,8 @@ The public release must satisfy these constraints:
 - one supported setup path
 - enough detail for a new engineer or coding agent to rebuild the environment on another machine
 
+For AI operator notes, read [docs/ai-operator-guide.md](ai-operator-guide.md) together with this blueprint.
+
 ## 2. Supported entry points
 
 Read these files first:
@@ -85,6 +87,12 @@ Copy `.env.example` to `.env` and fill in the values.
 | `OIDC_AUDIENCE` | OAuth audience for `/mcp` |
 | `REMOTE_WORKSTATION_TOKEN` | Shared secret between gateway and agent |
 
+These values are intentionally not committed. A new operator must ask the user for their own:
+
+- Auth0 tenant / issuer URL
+- ngrok reserved domain
+- workstation token
+
 ### Common local execution values
 
 | Variable | Default | Purpose |
@@ -96,6 +104,7 @@ Copy `.env.example` to `.env` and fill in the values.
 | `CHROME_EXECUTABLE` | empty | Optional override for the local Chrome executable path |
 | `CHROME_DEVTOOLS_USER_DATA_DIR` | `%LOCALAPPDATA%\full-access-mcp\chrome-devtools-mcp-profile` | Optional dedicated Chrome profile path for DevTools attachment |
 | `CHROME_REMOTE_DEBUGGING_AUTO_ALLOW_ENABLED` | `true` | Auto-accepts Chrome remote debugging prompt |
+| `CHATGPT_MCP_AUTO_ALLOW_ENABLED` | `true` | Auto-accepts ChatGPT MCP approval cards on the real Windows desktop |
 
 ## 5. External services
 
@@ -245,7 +254,7 @@ Run these commands after any setup or release change:
 
 ```powershell
 npm run check
-npm run test
+npm run test -- --runInBand
 npm run build
 ```
 
@@ -257,6 +266,34 @@ npm run gateway:cli -- --path /mcp read-resource gateway://recent-tool-calls
 ```
 
 ## 9. Common failure modes
+
+### ChatGPT Apps `Refresh` ran, but old tools or old approval wording still appear
+
+Treat this as a stale runtime or stale app snapshot problem until proven otherwise.
+
+Use this order:
+
+```powershell
+npm run build
+npm run runtime:stop
+npm run runtime:start
+npm run runtime:status
+npm run gateway:cli -- --path /mcp list-tools
+```
+
+Then in ChatGPT Web:
+
+1. Open `Settings -> Apps -> Full Access MCP`
+2. Press `Refresh`
+3. Start a new chat
+
+Important:
+
+- browser cache clear alone is not enough
+- a new chat alone is not enough
+- Apps `Refresh` alone is not enough if the old gateway process is still serving the previous tool surface
+
+If removed tool names still appear after that sequence, compare the ChatGPT app view against the live `list-tools` output before changing code again.
 
 ### Health endpoint says `connected: false`
 
@@ -284,6 +321,17 @@ The browser tool surface is intentionally split:
 
 If one browser session goes stale, prefer the high-level tools in `docs/mcp-catalog.md` instead of manually chaining low-level browser calls.
 
+### Approval watcher stopped matching after tool wording changed
+
+The approval watcher derives its matcher contract from the published tool metadata. If tool names, titles, or descriptions changed:
+
+1. rebuild
+2. restart the runtime
+3. refresh the ChatGPT app
+4. test one real approval card again
+
+Do not treat browser cache or a new chat as sufficient proof that the new contract is active.
+
 ## 10. Release rules
 
 The public repository must never contain:
@@ -301,5 +349,7 @@ The repository should always contain:
 - `README.md`
 - this blueprint
 - `docs/mcp-catalog.md`
+- `docs/ai-operator-guide.md`
+- `docs/full-access-mcp-decision-log-2026-04-23.md`
 - `AGENTS.md`
 - `.github/copilot-instructions.md`

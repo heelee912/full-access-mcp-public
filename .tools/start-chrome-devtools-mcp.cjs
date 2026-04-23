@@ -2,6 +2,42 @@ const { spawn, spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 
+function readDotEnvValues() {
+  const dotEnvPath = path.join(process.cwd(), '.env');
+  if (!fs.existsSync(dotEnvPath)) {
+    return {};
+  }
+
+  const envValues = {};
+  const dotEnvContent = fs.readFileSync(dotEnvPath, 'utf8');
+  for (const rawLine of dotEnvContent.split(/\r?\n/u)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) {
+      continue;
+    }
+
+    const separatorIndex = line.indexOf('=');
+    if (separatorIndex <= 0) {
+      continue;
+    }
+
+    const key = line.slice(0, separatorIndex).trim();
+    const value = line.slice(separatorIndex + 1).trim();
+    if (key) {
+      envValues[key] = value;
+    }
+  }
+
+  return envValues;
+}
+
+function createRuntimeEnv() {
+  return {
+    ...process.env,
+    ...readDotEnvValues(),
+  };
+}
+
 function resolveNpxCliScript() {
   const nodeExecutable = process.execPath;
   const nodeDirectory = path.dirname(nodeExecutable);
@@ -31,7 +67,7 @@ function parseBrowserInfo(stdout) {
   return JSON.parse(trimmedStdout.slice(jsonStartIndex));
 }
 
-function getBrowserInfo() {
+function getBrowserInfo(runtimeEnv) {
   const helperScriptPath = path.join(__dirname, 'start-chrome-devtools-mcp.ps1');
   const helperResult = spawnSync(
     'powershell.exe',
@@ -50,6 +86,7 @@ function getBrowserInfo() {
     {
       cwd: process.cwd(),
       encoding: 'utf8',
+      env: runtimeEnv,
       windowsHide: true,
     },
   );
@@ -67,25 +104,41 @@ function getBrowserInfo() {
   return parseBrowserInfo(helperResult.stdout);
 }
 
-async function main() {
-  const browserInfo = getBrowserInfo();
-  const npxCliScript = resolveNpxCliScript();
+function usesAutoConnect(runtimeEnv) {
+  const attachMode = String(runtimeEnv.CHROME_DEVTOOLS_ATTACH_MODE || '').trim().toLowerCase();
+  return (
+    attachMode === 'existing-required' ||
+    attachMode === 'autoconnect' ||
+    attachMode === 'auto-connect' ||
+    attachMode === 'main-chrome-devtools'
+  );
+}
 
-  process.env.CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS = '1';
+async function main() {
+  const runtimeEnv = createRuntimeEnv();
+  runtimeEnv.CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS = '1';
+  const npxCliScript = resolveNpxCliScript();
+  const chromeDevtoolsArgs = [
+    npxCliScript,
+    '-y',
+    'chrome-devtools-mcp@latest',
+  ];
+
+  if (usesAutoConnect(runtimeEnv)) {
+    chromeDevtoolsArgs.push('--autoConnect', '--channel=stable');
+  } else {
+    const browserInfo = getBrowserInfo(runtimeEnv);
+    chromeDevtoolsArgs.push('--browserUrl', browserInfo.browserUrl);
+  }
+
+  chromeDevtoolsArgs.push('--no-usage-statistics');
 
   const child = spawn(
     process.execPath,
-    [
-      npxCliScript,
-      '-y',
-      'chrome-devtools-mcp@latest',
-      '--browserUrl',
-      browserInfo.browserUrl,
-      '--no-usage-statistics',
-    ],
+    chromeDevtoolsArgs,
     {
       cwd: process.cwd(),
-      env: process.env,
+      env: runtimeEnv,
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
     },

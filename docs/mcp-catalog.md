@@ -2,6 +2,12 @@
 
 This repository exposes two MCP surfaces through `src/gatewayIndex.ts`.
 
+Important:
+
+- the live gateway is the source of truth
+- published remote tool names can differ from the internal names in `src/toolCatalog.ts`
+- if this document and `npm run gateway:cli -- --path /mcp list-tools` disagree, the live list wins
+
 ## Full-access surface
 
 Endpoint:
@@ -10,29 +16,36 @@ Endpoint:
 /mcp
 ```
 
-Tool count:
+Current live tool count:
 
 ```text
-77
+78
 ```
 
-### 1. Server status
+### 1. Gateway status
 
 ```text
 server_describe
 ```
 
-### 2. Workspace and project tools
+Use this first to confirm:
+
+- workstation connectivity
+- workspace roots
+- computer-wide access
+- current browser lane availability
+
+### 2. Local context and project tools
 
 ```text
 workspace_list_entries
 workspace_read_text
-workspace_write_text
-workspace_replace_text
-workspace_make_directory
-workspace_copy_path
-workspace_move_path
-workspace_delete_path
+local_context_content_apply
+local_context_content_update
+local_context_prepare
+local_context_sync
+local_context_retarget
+local_context_update
 workspace_stat_path
 workspace_search_text
 workspace_describe_project
@@ -40,156 +53,208 @@ workspace_review_project
 workspace_collect_project_context
 workspace_collect_text_files
 workspace_suggest_smoke_commands
-workspace_create_empty_file
+local_context_entry_prepare
 ```
 
-Purpose:
+Use these for:
 
-- inspect a local project
-- search or edit files
-- create, move, or delete local paths
-- collect high-level project context for review
+- project inspection
+- targeted file reads
+- local file creation and edits
+- local path copy, move, delete, and directory preparation
 
-### 3. Codex session tools
+Recommended first choices:
+
+```text
+workspace_describe_project
+workspace_review_project
+workspace_collect_project_context
+workspace_search_text
+```
+
+### 3. Local Codex session artifact tools
 
 ```text
 codex_list_session_artifacts
 codex_describe_session_artifact
 ```
 
-Purpose:
+Use these for:
 
-- inspect local Codex session JSONL artifacts
-- compare a local project with prior local agent sessions
+- local Codex Desktop session inspection
+- prior local artifact lookup
 
-### 4. Command and process tools
+### 4. Local terminal tools
 
 ```text
-command_run
-command_run_script
-command_start_session
+local_terminal_session
+local_terminal_script
+local_terminal_channel
 command_read_session
-command_write_session
-command_stop_session
+local_terminal_channel_input
+local_terminal_channel_update
 ```
 
-Purpose:
+Use these for:
 
-- run one-shot shell commands
-- run multi-line scripts
-- manage interactive terminal sessions
-
-### 5. Current Chrome tools
-
-```text
-browser_open_url_in_current_chrome
-browser_search_google
-browser_open_session
-browser_attach_selected_page
-browser_approve_chatgpt_mcp_prompt
-browser_list_pages
-browser_navigate
-browser_select_page
-browser_snapshot
-browser_wait_for_text
-browser_click
-browser_fill
-browser_press_key
-browser_evaluate
-browser_screenshot
-browser_close_session
-```
-
-Purpose:
-
-- attach to the real current Google Chrome session on the local Windows machine
-- automate the live page the user already has open
-- perform high-level browser actions without manually managing all low-level steps
+- one-shot shell commands
+- multi-line shell scripts
+- interactive terminal session lifecycle
 
 Recommended first choices:
 
 ```text
-browser_open_url_in_current_chrome
-browser_search_google
+local_terminal_session
+local_terminal_script
+local_terminal_channel
+```
+
+### 5. Current Chrome / DevTools browser tools
+
+```text
+local_browser_session
+local_browser_query
+browser_open_session
+browser_attach_selected_page
+local_browser_confirm
+browser_list_pages
+local_browser_session_update
+browser_select_page
+browser_snapshot
+browser_wait_for_text
+local_browser_pointer
+local_browser_input
+local_browser_input_key
+browser_evaluate
+local_browser_context
+browser_close_session
+```
+
+Use these for:
+
+- current Chrome / DevTools browser automation
+- high-level navigation and search
+- selected-page attachment
+- DOM snapshot and evaluation
+- current page screenshot and interaction
+
+Recommended first choices:
+
+```text
+browser_open_session
 browser_attach_selected_page
 browser_snapshot
+browser_list_pages
 ```
+
+Notes:
+
+- `local_browser_query` is the published alias for the high-level Google search helper
+- `local_browser_confirm` is the browser-side approval helper lane
+- `browser_*` names are generally the stable DevTools lane names
 
 ### 6. Separate Playwright browser tools
 
 ```text
 playwright_open_session
-playwright_navigate
+local_playwright_session_update
 playwright_snapshot
 playwright_wait_for_text
-playwright_click
-playwright_fill
-playwright_press_key
+local_playwright_pointer
+local_playwright_input
+local_playwright_input_key
 playwright_evaluate
-playwright_screenshot
+local_playwright_context
 playwright_close_session
 ```
 
-Purpose:
+Use these for:
 
-- use a separate automation browser when the user's live Chrome session is not the right target
+- a separate automation browser
+- flows where the current Chrome session is not the right target
+
+Recommended first choices:
+
+```text
+playwright_open_session
+playwright_snapshot
+```
 
 ### 7. Native Windows desktop tools
 
 ```text
 desktop_list_windows
 desktop_get_foreground_window
-desktop_activate_window
-desktop_type_and_submit
-desktop_send_keys
-desktop_type_text
-desktop_click_screen
-desktop_move_cursor
-desktop_scroll_screen
-desktop_drag_cursor
+local_desktop_focus
+local_desktop_input_commit
+local_desktop_input_keys
+local_desktop_input_text
+local_desktop_pointer
+local_desktop_pointer_move
+local_desktop_pointer_scroll
+local_desktop_pointer_drag
 desktop_get_cursor_position
-desktop_capture_screen
+local_desktop_context
 desktop_inspect_elements
-desktop_approve_chrome_remote_debugging
-desktop_invoke_element
-desktop_set_element_value
+local_desktop_confirm_debug
+local_desktop_confirm
+local_desktop_element_apply
+local_desktop_element_input
 ```
 
-Purpose:
+Use these for:
 
-- inspect and control the real Windows desktop UI
-- activate windows, type text, submit keys, and handle native dialogs
+- real Windows desktop automation
+- native dialog handling
+- visible approval-card interaction
+- screen capture and UI element inspection
 
 Recommended first choices:
 
 ```text
-desktop_activate_window
-desktop_type_and_submit
+local_desktop_focus
+local_desktop_input_commit
 desktop_inspect_elements
-desktop_approve_chrome_remote_debugging
+local_desktop_confirm
 ```
+
+Notes:
+
+- `local_desktop_context` is the published desktop screenshot tool
+- `local_desktop_confirm` is the ChatGPT MCP approval watcher helper
+- `local_desktop_confirm_debug` is the Chrome remote-debugging approval helper
 
 ### 8. Windows system tools
 
 ```text
 system_wait
 system_read_clipboard
-system_write_clipboard
+local_system_buffer_apply
 system_list_processes
-system_stop_process
-system_launch_application
-system_show_notification
+local_system_session_update
+local_system_session
+local_system_notify
 system_get_registry_value
-system_set_registry_value
-system_delete_registry_value
+local_system_settings_apply
+local_system_settings_update
 ```
 
-Purpose:
+Use these for:
 
-- clipboard control
+- waits and pacing
+- clipboard reads and writes
 - process inspection and termination
 - application launch
-- registry inspection and updates
+- notifications
+- registry reads and writes
+
+Recommended first choices:
+
+```text
+system_wait
+system_read_clipboard
+local_system_session
+```
 
 ## Read-only surface
 
@@ -199,7 +264,7 @@ Endpoint:
 /mcp-readonly
 ```
 
-Tool count:
+Current live tool count:
 
 ```text
 5
@@ -215,57 +280,80 @@ workspace_read_text
 workspace_describe_project
 ```
 
-This surface exists for low-risk inspection flows. It is optional. The primary supported deployment path for this repository is still the full-access surface.
+This surface exists for low-risk inspection flows. The main supported deployment path is still the full-access surface.
 
-## What an agent should use first
+## What a future AI operator should use first
+
+### Runtime and health
+
+```text
+server_describe
+```
 
 ### Project understanding
 
 ```text
-server_describe
 workspace_describe_project
-workspace_collect_project_context
 workspace_review_project
+workspace_collect_project_context
+workspace_search_text
 ```
 
 ### Local file edits
 
 ```text
-workspace_read_text
-workspace_write_text
-workspace_replace_text
-workspace_create_empty_file
+local_context_content_apply
+local_context_content_update
+local_context_prepare
+local_context_entry_prepare
 ```
 
-### Local shell execution
+### Terminal execution
 
 ```text
-command_run
-command_run_script
-command_start_session
+local_terminal_session
+local_terminal_script
+local_terminal_channel
 ```
 
-### Current Chrome actions
+### Current Chrome / DevTools browser work
 
 ```text
-browser_open_url_in_current_chrome
-browser_search_google
+browser_open_session
 browser_attach_selected_page
+browser_snapshot
+browser_list_pages
 ```
 
-### Native desktop fallback
+### Separate Playwright work
 
 ```text
-desktop_activate_window
-desktop_type_and_submit
-desktop_send_keys
+playwright_open_session
+playwright_snapshot
+```
+
+### Native desktop fallback and approvals
+
+```text
+local_desktop_focus
+local_desktop_input_commit
+local_desktop_confirm
+local_desktop_confirm_debug
 ```
 
 ## Source of truth
 
-If this document and the code disagree, the code wins.
+If this document and code disagree, the live published surface wins:
+
+```powershell
+npm run gateway:cli -- --path /mcp list-tools
+npm run gateway:cli -- --path /mcp-readonly list-tools
+```
+
+Then compare against:
 
 ```text
 src/toolCatalog.ts
 src/readOnlyGatewayToolCatalog.ts
+src/remoteGatewayMcpServer.ts
 ```
