@@ -12,12 +12,8 @@ import {
 } from 'playwright';
 
 import {
-  getChatGptMcpAppNamePatterns,
-  getChatGptMcpContextPatterns,
-  getChatGptMcpIgnoredActionPatterns,
-  getChatGptMcpPrimaryActionPatterns,
-  getChatGptMcpRejectActionPatterns,
-  getChatGptMcpRememberOptionPatterns,
+  createDefaultChatGptMcpApprovalContract,
+  type ChatGptMcpApprovalContract,
 } from './chatGptMcpApproval.js';
 import { WorkspaceFileAccess } from './workspaceFileAccess.js';
 
@@ -227,20 +223,22 @@ export function findReusableBrowserPage(
   );
 }
 
-function buildChatGptMcpApprovalEvaluationScript(): string {
-  const appNamePatterns = JSON.stringify(getChatGptMcpAppNamePatterns());
-  const contextPatterns = JSON.stringify(getChatGptMcpContextPatterns());
+function buildChatGptMcpApprovalEvaluationScript(
+  approvalContract: ChatGptMcpApprovalContract,
+): string {
+  const appNamePatterns = JSON.stringify(approvalContract.appNamePatterns);
+  const contextPatterns = JSON.stringify(approvalContract.contextPatterns);
   const primaryActionPatterns = JSON.stringify(
-    getChatGptMcpPrimaryActionPatterns(),
+    approvalContract.primaryActionPatterns,
   );
   const rejectActionPatterns = JSON.stringify(
-    getChatGptMcpRejectActionPatterns(),
+    approvalContract.rejectActionPatterns,
   );
   const ignoredActionPatterns = JSON.stringify(
-    getChatGptMcpIgnoredActionPatterns(),
+    approvalContract.ignoredActionPatterns,
   );
   const rememberOptionPatterns = JSON.stringify(
-    getChatGptMcpRememberOptionPatterns(),
+    approvalContract.rememberOptionPatterns,
   );
 
   return `() => {
@@ -265,6 +263,21 @@ function buildChatGptMcpApprovalEvaluationScript(): string {
           return (
             normalized.includes(normalizedPattern) ||
             (compactPattern !== '' && compactValue.includes(compactPattern))
+          );
+        })
+      );
+    };
+    const matchesAction = (value, patterns) => {
+      const normalized = normalizeLower(value);
+      const compactValue = compact(value);
+      return (
+        normalized !== '' &&
+        patterns.some((pattern) => {
+          const normalizedPattern = normalizeLower(pattern);
+          const compactPattern = compact(pattern);
+          return (
+            normalized === normalizedPattern ||
+            (compactPattern !== '' && compactValue === compactPattern)
           );
         })
       );
@@ -332,12 +345,13 @@ function buildChatGptMcpApprovalEvaluationScript(): string {
         const positiveButtons = buttons.filter(
           (button) =>
             !matchesAny(button.label, ignoredPatterns) &&
-            !matchesAny(button.label, rejectPatterns) &&
-            (matchesAny(button.label, primaryPatterns) ||
+            !matchesAction(button.label, rejectPatterns) &&
+            !matchesAny(button.label, appPatterns) &&
+            (matchesAction(button.label, primaryPatterns) ||
               hasPrimaryButtonClass(button.element)),
         );
         const rejectButtons = buttons.filter((button) =>
-          matchesAny(button.label, rejectPatterns) ||
+          matchesAction(button.label, rejectPatterns) ||
           hasSecondaryButtonClass(button.element),
         );
         if (positiveButtons.length === 0 || rejectButtons.length === 0) {
@@ -386,6 +400,8 @@ export class BrowserSessionRegistry {
   private browserTransport: StdioClientTransport | undefined;
   private browserClientPromise: Promise<Client> | undefined;
   private browserCallQueue: Promise<void> = Promise.resolve();
+  private chatGptMcpApprovalContract: ChatGptMcpApprovalContract =
+    createDefaultChatGptMcpApprovalContract();
 
   constructor(
     private readonly workspaceFileAccess: WorkspaceFileAccess,
@@ -393,6 +409,12 @@ export class BrowserSessionRegistry {
     private readonly defaultHeadless: boolean,
     private readonly storageRoot: string,
   ) {}
+
+  setChatGptMcpApprovalContract(
+    approvalContract: ChatGptMcpApprovalContract,
+  ): void {
+    this.chatGptMcpApprovalContract = approvalContract;
+  }
 
   private ensureBrowserEnabled(): void {
     if (!this.enabled) {
@@ -708,7 +730,9 @@ export class BrowserSessionRegistry {
       await this.selectPage(chatGptPage.pageId);
 
       const toolResult = await this.callChromeTool('evaluate_script', {
-        function: buildChatGptMcpApprovalEvaluationScript(),
+        function: buildChatGptMcpApprovalEvaluationScript(
+          this.chatGptMcpApprovalContract,
+        ),
       });
       const parsed = parseJsonCodeBlock<ChatGptMcpPromptApprovalResult>(
         extractTextContent(toolResult),

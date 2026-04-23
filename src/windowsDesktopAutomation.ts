@@ -4,12 +4,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import {
-  getChatGptMcpAppNamePatterns,
-  getChatGptMcpContextPatterns,
-  getChatGptMcpIgnoredActionPatterns,
-  getChatGptMcpPrimaryActionPatterns,
-  getChatGptMcpRejectActionPatterns,
-  getChatGptMcpRememberOptionPatterns,
+  createDefaultChatGptMcpApprovalContract,
+  type ChatGptMcpApprovalContract,
 } from './chatGptMcpApproval.js';
 import {
   getChromeRemoteDebuggingAllowButtonLabels as getChromeRemoteDebuggingAllowButtonLabelsOnly,
@@ -278,7 +274,16 @@ type ChromeWindowPromptApprovalResult = {
 };
 
 export class WindowsDesktopAutomation {
+  private chatGptMcpApprovalContract: ChatGptMcpApprovalContract =
+    createDefaultChatGptMcpApprovalContract();
+
   constructor(private readonly workspaceFileAccess: WorkspaceFileAccess) {}
+
+  setChatGptMcpApprovalContract(
+    approvalContract: ChatGptMcpApprovalContract,
+  ): void {
+    this.chatGptMcpApprovalContract = approvalContract;
+  }
 
   private async approveChromeWindowPrompt(
     options: ChromeWindowPromptApprovalOptions,
@@ -331,6 +336,26 @@ export class WindowsDesktopAutomation {
         '  }',
         '  return $false',
         '}',
+        'function Normalize-UiText([string]$Text) {',
+        '  if ([string]::IsNullOrWhiteSpace($Text)) { return "" }',
+        '  return (($Text -replace "\\s+", " ").Trim()).ToLowerInvariant()',
+        '}',
+        'function Compact-UiText([string]$Text) {',
+        '  return [regex]::Replace((Normalize-UiText $Text), "[^\\p{L}\\p{N}]+", "")',
+        '}',
+        'function Matches-ActionPattern([string]$Text, [string[]]$Patterns) {',
+        '  if ([string]::IsNullOrWhiteSpace($Text)) { return $false }',
+        '  $normalizedText = Normalize-UiText $Text',
+        '  $compactText = Compact-UiText $Text',
+        '  foreach ($pattern in $Patterns) {',
+        '    if ([string]::IsNullOrWhiteSpace($pattern)) { continue }',
+        '    $normalizedPattern = Normalize-UiText $pattern',
+        '    $compactPattern = Compact-UiText $pattern',
+        '    if ($normalizedText -eq $normalizedPattern) { return $true }',
+        '    if (-not [string]::IsNullOrWhiteSpace($compactPattern) -and $compactText -eq $compactPattern) { return $true }',
+        '  }',
+        '  return $false',
+        '}',
         'function Is-IgnoredButtonName([string]$Name) {',
         '  if ([string]::IsNullOrWhiteSpace($Name)) { return $false }',
         '  $normalizedName = $Name.ToLowerInvariant()',
@@ -341,11 +366,7 @@ export class WindowsDesktopAutomation {
         '}',
         'function Is-RejectButtonName([string]$Name) {',
         '  if ([string]::IsNullOrWhiteSpace($Name)) { return $false }',
-        '  $normalizedName = $Name.ToLowerInvariant()',
-        '  foreach ($pattern in $rejectButtonPatterns) {',
-        '    if (-not [string]::IsNullOrWhiteSpace($pattern) -and $normalizedName.Contains($pattern)) { return $true }',
-        '  }',
-        '  return $false',
+        '  return Matches-ActionPattern $Name $rejectButtonPatterns',
         '}',
         'function Try-InvokeAutomationElement($Element) {',
         '  $invokePattern = $null',
@@ -413,11 +434,9 @@ export class WindowsDesktopAutomation {
         '  $normalizedName = $Name.ToLowerInvariant()',
         '  if (Is-IgnoredButtonName $Name) { return -1 }',
         '  if (Is-RejectButtonName $Name) { return -1 }',
-        '  if ($expectedPrimaryActionPatterns.Count -gt 0 -and -not (Matches-NormalizedFragment $Name $expectedPrimaryActionPatterns)) { return -1 }',
+        '  if ($expectedPrimaryActionPatterns.Count -gt 0 -and -not (Matches-ActionPattern $Name $expectedPrimaryActionPatterns)) { return -1 }',
         '  if ($allowLabels -contains $normalizedName) { return 1000 }',
-        '  foreach ($pattern in $primaryActionPatterns) {',
-        '    if (-not [string]::IsNullOrWhiteSpace($pattern) -and $normalizedName.Contains($pattern)) { return 500 }',
-        '  }',
+        '  if (Matches-ActionPattern $Name $primaryActionPatterns) { return 500 }',
         '  return -1',
         '}',
         'function Shares-ButtonRow($CandidateBounds, $RejectBounds) {',
@@ -432,6 +451,13 @@ export class WindowsDesktopAutomation {
         '  if ([Math]::Abs($candidateCenter - $rejectCenter) -le 24) { return $true }',
         '  if ($candidateTop -le $rejectBottom -and $candidateBottom -ge $rejectTop) { return $true }',
         '  return $false',
+        '}',
+        'function Is-ToRightOfReject($CandidateBounds, $RejectBounds) {',
+        '  if ($null -eq $CandidateBounds -or $null -eq $RejectBounds) { return $false }',
+        '  $candidateLeft = ConvertTo-SafeInt $CandidateBounds.Left',
+        '  $rejectRight = ConvertTo-SafeInt $RejectBounds.Right',
+        '  if ($null -eq $candidateLeft -or $null -eq $rejectRight) { return $false }',
+        '  return $candidateLeft -ge $rejectRight',
         '}',
         'foreach ($window in $chromeWindows) {',
         '  try {',
@@ -459,8 +485,8 @@ export class WindowsDesktopAutomation {
         '    if (-not $contextDetected -and (Matches-NormalizedFragment $name $contextPatterns)) { $contextDetected = $true }',
         '    if ($scanItem.ControlType -like "*Button*") {',
         '      if (-not $positiveButtonDetected -and (Get-ButtonScore $name) -ge 0) { $positiveButtonDetected = $true }',
-        '      if (-not $expectedPositiveButtonDetected -and (Matches-NormalizedFragment $name $expectedPrimaryActionPatterns)) { $expectedPositiveButtonDetected = $true }',
-        '      if (-not $negativeButtonDetected -and (Matches-NormalizedFragment $name $rejectButtonPatterns)) { $negativeButtonDetected = $true }',
+        '      if (-not $expectedPositiveButtonDetected -and (Matches-ActionPattern $name $expectedPrimaryActionPatterns)) { $expectedPositiveButtonDetected = $true }',
+        '      if (-not $negativeButtonDetected -and (Matches-ActionPattern $name $rejectButtonPatterns)) { $negativeButtonDetected = $true }',
         '    }',
         '    if (($promptDetected -or ($positiveButtonDetected -and $negativeButtonDetected)) -and $expectedPromptDetected -and $expectedPositiveButtonDetected -and $appDetected -and $contextDetected) { break }',
         '  }',
@@ -493,7 +519,7 @@ export class WindowsDesktopAutomation {
         '    $score = Get-ButtonScore $scanItem.Name',
         '    if ($score -lt 0 -and $rejectButtons.Count -gt 0) {',
         '      foreach ($rejectButton in $rejectButtons) {',
-        '        if (Shares-ButtonRow $scanItem.Bounds $rejectButton.Bounds) {',
+        '        if ((Shares-ButtonRow $scanItem.Bounds $rejectButton.Bounds) -and (Is-ToRightOfReject $scanItem.Bounds $rejectButton.Bounds)) {',
         '          $score = 250',
         '          break',
         '        }',
@@ -958,17 +984,19 @@ export class WindowsDesktopAutomation {
   }
 
   async approveChatGptMcpPrompt(): Promise<unknown> {
+    const approvalContract = this.chatGptMcpApprovalContract;
+
     return await this.approveChromeWindowPrompt({
-      promptFragments: getChatGptMcpAppNamePatterns(),
+      promptFragments: approvalContract.appNamePatterns,
       allowButtonLabels: [],
-      primaryActionPatterns: getChatGptMcpPrimaryActionPatterns(),
-      rejectButtonPatterns: getChatGptMcpRejectActionPatterns(),
-      ignoredButtonPatterns: getChatGptMcpIgnoredActionPatterns(),
-      requireAppNamePatterns: getChatGptMcpAppNamePatterns(),
-      contextPatterns: getChatGptMcpContextPatterns(),
-      rememberOptionPatterns: getChatGptMcpRememberOptionPatterns(),
+      primaryActionPatterns: approvalContract.primaryActionPatterns,
+      rejectButtonPatterns: approvalContract.rejectActionPatterns,
+      ignoredButtonPatterns: approvalContract.ignoredActionPatterns,
+      requireAppNamePatterns: approvalContract.appNamePatterns,
+      contextPatterns: approvalContract.contextPatterns,
+      rememberOptionPatterns: approvalContract.rememberOptionPatterns,
       autoRemember: true,
-      expectedPrimaryActionPatterns: getChatGptMcpPrimaryActionPatterns(),
+      expectedPrimaryActionPatterns: approvalContract.primaryActionPatterns,
     });
   }
 }

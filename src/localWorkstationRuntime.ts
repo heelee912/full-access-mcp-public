@@ -1,6 +1,7 @@
 import path from 'node:path';
 
 import { BrowserSessionRegistry } from './browserSessionRegistry.js';
+import { buildChatGptMcpApprovalContract } from './chatGptMcpApproval.js';
 import { ChatGptMcpApprovalWatcher } from './chatGptMcpApprovalWatcher.js';
 import { ChromeRemoteDebuggingApprovalWatcher } from './chromeRemoteDebuggingApprovalWatcher.js';
 import { CommandSessionRegistry } from './commandSessionRegistry.js';
@@ -65,6 +66,12 @@ export function createLocalWorkstationRuntime(
     windowsDesktopAutomation,
     windowsSystemControl,
   });
+  const approvalContract = buildChatGptMcpApprovalContract(
+    toolCatalog.toolDefinitions,
+  );
+
+  browserSessionRegistry.setChatGptMcpApprovalContract(approvalContract);
+  windowsDesktopAutomation.setChatGptMcpApprovalContract(approvalContract);
 
   chromeRemoteDebuggingApprovalWatcher.start();
   chatGptMcpApprovalWatcher.start();
