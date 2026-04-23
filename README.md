@@ -3,7 +3,7 @@
 Full Access MCP Server exposes a local Windows workstation to ChatGPT Developer Mode through a remote Streamable HTTP MCP gateway. The supported deployment path is:
 
 ```text
-ChatGPT Developer Mode
+Web ChatGPT Developer Mode
 -> remote HTTPS MCP gateway
 -> local workstation agent
 -> local files / terminal / current Chrome / Windows desktop
