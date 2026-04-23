@@ -1,38 +1,34 @@
 const chatGptMcpAppNamePatterns = ['full access mcp'] as const;
 
-const chatGptMcpWindowTitlePatterns = ['chatgpt', 'mcp'] as const;
-
 const chatGptMcpContextPatterns = [
   'sharing data includes',
   'using tools comes with risks',
   'local workspace files will be modified',
   'this will execute',
-  'this will open',
   'this will overwrite',
   'this will list',
   'this will search',
   'this will run',
   'this will read',
-  'this will save',
   'this will create',
   'this will edit',
-  'this will capture',
-  'this will take',
-  'save a screenshot',
   'list local workspace files',
   'list files and directories',
-  'persistent chromium browser',
 ] as const;
 
 const chatGptMcpPrimaryActionPatterns = [
   'allow',
   'approve',
+  'confirm',
+  'continue',
+  'connect',
+  'activate window',
+  '\uD655\uC778',
+  '\uACC4\uC18D',
+  '\uACC4\uC18D\uD558\uAE30',
   'list entries',
-  'open browser session',
-  'open local chrome session',
   'write file',
   'run command',
-  'capture screen',
   'search workspace',
   'describe project',
   'read file',
@@ -42,8 +38,6 @@ const chatGptMcpPrimaryActionPatterns = [
   'create local empty file',
   'create file',
   'edit file',
-  'take screenshot',
-  'capture screenshot',
   'replace text',
   'run local terminal command',
   'run local powershell script',
@@ -57,7 +51,9 @@ const chatGptMcpRejectActionPatterns = [
   'cancel',
   'not now',
   '\uAC70\uBD80',
+  '\uAC70\uC808\uD558\uAE30',
   '\uCDE8\uC18C',
+  'do not connect',
   '\uC124\uC815\uC5D0\uC11C \uC0AC\uC6A9 \uC911\uC9C0',
 ] as const;
 
@@ -121,16 +117,8 @@ export function matchesChatGptMcpAppName(text: string): boolean {
   return matchesAnyPattern(text, chatGptMcpAppNamePatterns);
 }
 
-export function matchesChatGptMcpWindowTitleHint(text: string): boolean {
-  return matchesAnyPattern(text, chatGptMcpWindowTitlePatterns);
-}
-
 export function getChatGptMcpAppNamePatterns(): string[] {
   return [...chatGptMcpAppNamePatterns];
-}
-
-export function getChatGptMcpWindowTitlePatterns(): string[] {
-  return [...chatGptMcpWindowTitlePatterns];
 }
 
 export function getChatGptMcpContextPatterns(): string[] {

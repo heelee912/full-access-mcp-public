@@ -143,6 +143,16 @@ function isUnknownBrowserSessionError(error: unknown): boolean {
   );
 }
 
+export function isRecoverableChromeConnectionError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  return /could not connect to chrome|failed to fetch browser websocket url|connection closed|transport closed|econnrefused/i.test(
+    error.message,
+  );
+}
+
 export function isMissingChromePageError(error: unknown): boolean {
   return (
     error instanceof Error &&
@@ -277,12 +287,6 @@ function buildChatGptMcpApprovalEvaluationScript(): string {
           element.innerText ||
           element.textContent,
       );
-    const getButtonRightEdge = (element) => {
-      if (!(element instanceof HTMLElement)) {
-        return Number.NEGATIVE_INFINITY;
-      }
-      return element.getBoundingClientRect().right;
-    };
     const hasPrimaryButtonClass = (element) =>
       /(?:^|\\s)btn-primary(?:\\s|$)/i.test(element.className || '');
     const hasSecondaryButtonClass = (element) =>
@@ -328,7 +332,9 @@ function buildChatGptMcpApprovalEvaluationScript(): string {
         const positiveButtons = buttons.filter(
           (button) =>
             !matchesAny(button.label, ignoredPatterns) &&
-            !matchesAny(button.label, rejectPatterns),
+            !matchesAny(button.label, rejectPatterns) &&
+            (matchesAny(button.label, primaryPatterns) ||
+              hasPrimaryButtonClass(button.element)),
         );
         const rejectButtons = buttons.filter((button) =>
           matchesAny(button.label, rejectPatterns) ||
@@ -362,21 +368,9 @@ function buildChatGptMcpApprovalEvaluationScript(): string {
       result.rememberName = getButtonLabel(rememberTarget);
     }
     const selectedButton =
-      selected.positiveButtons
-        .slice()
-        .sort((left, right) => {
-          const leftPrimary =
-            hasPrimaryButtonClass(left.element) ||
-            matchesAny(left.label, primaryPatterns);
-          const rightPrimary =
-            hasPrimaryButtonClass(right.element) ||
-            matchesAny(right.label, primaryPatterns);
-          if (leftPrimary !== rightPrimary) {
-            return leftPrimary ? -1 : 1;
-          }
-
-          return getButtonRightEdge(right.element) - getButtonRightEdge(left.element);
-        })[0];
+      selected.positiveButtons.find((button) =>
+        hasPrimaryButtonClass(button.element),
+      ) ?? selected.positiveButtons[selected.positiveButtons.length - 1];
     if (selectedButton && selectedButton.element instanceof HTMLElement) {
       selectedButton.element.click();
       result.approved = true;
@@ -491,26 +485,58 @@ export class BrowserSessionRegistry {
     }
   }
 
+  private async resetBrowserClient(): Promise<void> {
+    const transport = this.browserTransport;
+    this.browserClient = undefined;
+    this.browserTransport = undefined;
+    this.browserClientPromise = undefined;
+
+    if (!transport) {
+      return;
+    }
+
+    await Promise.race([transport.close(), sleep(1_000)]).catch(() => {});
+  }
+
   private async callChromeTool(
     name: string,
     argumentsValue: Record<string, unknown>,
   ): Promise<ChromeDevToolsToolResult> {
-    return await this.enqueueChromeCall(async () => {
-      const client = await this.ensureBrowserClient();
-      const toolResult = (await client.callTool({
-        name,
-        arguments: argumentsValue,
-      })) as ChromeDevToolsToolResult;
+    let lastError: unknown;
 
-      if (toolResult.isError) {
-        const errorText =
-          extractTextContent(toolResult) ||
-          `Chrome DevTools MCP tool failed: ${name}`;
-        throw new Error(errorText);
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        return await this.enqueueChromeCall(async () => {
+          const client = await this.ensureBrowserClient();
+          const toolResult = (await client.callTool({
+            name,
+            arguments: argumentsValue,
+          })) as ChromeDevToolsToolResult;
+
+          if (toolResult.isError) {
+            const errorText =
+              extractTextContent(toolResult) ||
+              `Chrome DevTools MCP tool failed: ${name}`;
+            throw new Error(errorText);
+          }
+
+          return toolResult;
+        });
+      } catch (error) {
+        lastError = error;
+
+        if (attempt === 0 && isRecoverableChromeConnectionError(error)) {
+          await this.resetBrowserClient();
+          continue;
+        }
+
+        throw error;
       }
+    }
 
-      return toolResult;
-    });
+    throw lastError instanceof Error
+      ? lastError
+      : new Error(`Chrome DevTools MCP tool failed: ${name}`);
   }
 
   private async enqueueChromeCall<T>(operation: () => Promise<T>): Promise<T> {

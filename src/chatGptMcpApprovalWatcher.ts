@@ -34,6 +34,10 @@ export class ChatGptMcpApprovalWatcher {
       return;
     }
 
+    console.info(
+      `arming ChatGPT MCP approval watcher (interval=${String(this.pollIntervalMs)}ms)`,
+    );
+
     this.pollTimer = setInterval(() => {
       if (!this.enabled || this.approvalRunInFlight) {
         return;

@@ -29,11 +29,12 @@ function Resolve-ChromeExecutable {
         return $commandCandidate.Source
     }
 
-    $pathCandidates = @(
-        (Join-Path $env:ProgramFiles 'Google\Chrome\Application\chrome.exe'),
-        (Join-Path ${env:ProgramFiles(x86)} 'Google\Chrome\Application\chrome.exe'),
-        (Join-Path $env:LOCALAPPDATA 'Google\Chrome\Application\chrome.exe')
-    ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+    $pathCandidates = @()
+    foreach ($basePath in @($env:ProgramFiles, ${env:ProgramFiles(x86)}, $env:LOCALAPPDATA)) {
+        if (-not [string]::IsNullOrWhiteSpace($basePath)) {
+            $pathCandidates += (Join-Path $basePath 'Google\Chrome\Application\chrome.exe')
+        }
+    }
 
     foreach ($candidate in $pathCandidates) {
         if (Test-Path -LiteralPath $candidate) {
@@ -184,13 +185,14 @@ try {
         if ($roots.Count -gt 0) {
             Stop-StaleManagedChrome
             Start-Sleep -Seconds 1
-            Remove-Item -LiteralPath $devToolsActivePortPath -Force -ErrorAction SilentlyContinue
         }
+
+        Remove-Item -LiteralPath $devToolsActivePortPath -Force -ErrorAction SilentlyContinue
 
         $browserArguments = @(
             '--remote-debugging-port=0',
             '--remote-debugging-address=127.0.0.1',
-            "--user-data-dir=$UserDataDir",
+            ("--user-data-dir=""{0}""" -f $UserDataDir),
             '--no-first-run',
             '--no-default-browser-check',
             '--disable-session-crashed-bubble',
