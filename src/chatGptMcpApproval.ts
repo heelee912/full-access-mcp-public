@@ -28,7 +28,6 @@ const baseContextPatterns = [
   'this will run',
   'this will read',
   'this will create',
-  'this will edit',
   'this will start',
   'this will allow',
   'full computer-wide access',
@@ -53,8 +52,10 @@ const basePrimaryActionPatterns = [
   '계속',
   '계속하기',
   'open session',
+  'open browser session',
   'access files',
   'make directory',
+  'create folder',
   'capture screen',
   'local browser automation',
   'list entries',
@@ -68,7 +69,6 @@ const basePrimaryActionPatterns = [
   'overwrite',
   'create local empty file',
   'create file',
-  'edit file',
   'replace text',
   'run local terminal command',
   'run local powershell script',
@@ -252,7 +252,6 @@ function derivePrimaryActionPatterns(toolDefinition: ApprovalToolDefinition): st
 
   if (toolDefinition.name.includes('replace_text')) {
     patterns.add('replace text');
-    patterns.add('edit file');
   }
 
   if (toolDefinition.name.includes('create_empty_file')) {

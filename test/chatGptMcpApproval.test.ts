@@ -27,6 +27,7 @@ test('matches Full Access MCP card labels', () => {
   assert.equal(matchesChatGptMcpRejectAction('거절하기'), true);
   assert.equal(matchesChatGptMcpRejectAction('Do not connect'), true);
   assert.equal(matchesChatGptMcpIgnoredAction('Details'), true);
+  assert.equal(matchesChatGptMcpPrimaryAction('Edit File'), false);
 });
 
 test('matches current approval card context strings', () => {
@@ -79,7 +80,7 @@ test('does not confuse ignored or reject buttons with primary actions', () => {
 test('derives approval matcher patterns from published tool metadata', () => {
   const approvalContract = buildChatGptMcpApprovalContract([
     {
-      name: 'browser_open_session',
+      name: 'local_browser_session',
       description:
         'Use the local Chrome connector on the connected local Windows PC for primary browser work.',
       annotations: {
@@ -87,7 +88,7 @@ test('derives approval matcher patterns from published tool metadata', () => {
       },
     },
     {
-      name: 'playwright_open_session',
+      name: 'local_playwright_session',
       description:
         'Use the local Playwright connector on the connected local Windows PC for browser automation work.',
       annotations: {
@@ -95,7 +96,7 @@ test('derives approval matcher patterns from published tool metadata', () => {
       },
     },
     {
-      name: 'workspace_make_directory',
+      name: 'local_context_prepare',
       description:
         'Use the local context connector on the connected local Windows PC for project-scoped context work.',
       annotations: {
@@ -138,6 +139,10 @@ test('derives approval matcher patterns from published tool metadata', () => {
   assert.equal(
     matchesChatGptMcpPrimaryAction('Capture Screen', approvalContract),
     true,
+  );
+  assert.equal(
+    matchesChatGptMcpPrimaryAction('Edit File', approvalContract),
+    false,
   );
   assert.equal(
     matchesChatGptMcpPrimaryAction('Click to scroll right', approvalContract),

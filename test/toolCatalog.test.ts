@@ -5,7 +5,7 @@ import {
   createFullAccessToolCatalog,
   type FullAccessToolCatalog,
 } from '../src/toolCatalog.js';
-import { getPublishedToolNameForSurface } from '../src/remoteGatewayMcpServer.js';
+import { getPublishedToolNameForSurface } from '../src/publishedToolSurface.js';
 
 function createSettings() {
   return {
