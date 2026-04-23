@@ -75,6 +75,16 @@ interface ChatGptMcpPromptApprovalResult {
   reason?: string;
 }
 
+type ChromeToolCallOptions = {
+  retryOnRecoverableConnectionError?: boolean;
+};
+
+export function shouldRetryChromeToolCallOnRecoverableConnectionError(
+  options: ChromeToolCallOptions,
+): boolean {
+  return options.retryOnRecoverableConnectionError === true;
+}
+
 function sleep(delayMs: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, delayMs);
@@ -523,6 +533,7 @@ export class BrowserSessionRegistry {
   private async callChromeTool(
     name: string,
     argumentsValue: Record<string, unknown>,
+    options: ChromeToolCallOptions = {},
   ): Promise<ChromeDevToolsToolResult> {
     let lastError: unknown;
 
@@ -547,7 +558,11 @@ export class BrowserSessionRegistry {
       } catch (error) {
         lastError = error;
 
-        if (attempt === 0 && isRecoverableChromeConnectionError(error)) {
+        if (
+          attempt === 0 &&
+          shouldRetryChromeToolCallOnRecoverableConnectionError(options) &&
+          isRecoverableChromeConnectionError(error)
+        ) {
           await this.resetBrowserClient();
           continue;
         }
@@ -573,7 +588,11 @@ export class BrowserSessionRegistry {
   }
 
   private async listPages(): Promise<BrowserPageDescriptor[]> {
-    const toolResult = await this.callChromeTool('list_pages', {});
+    const toolResult = await this.callChromeTool(
+      'list_pages',
+      {},
+      { retryOnRecoverableConnectionError: true },
+    );
     const pages = parseBrowserPageList(toolResult);
 
     if (pages.length === 0) {
@@ -586,7 +605,11 @@ export class BrowserSessionRegistry {
   }
 
   private async selectPage(pageId: number): Promise<void> {
-    await this.callChromeTool('select_page', { pageId });
+    await this.callChromeTool(
+      'select_page',
+      { pageId },
+      { retryOnRecoverableConnectionError: true },
+    );
   }
 
   private async captureDevToolsPageState(pageId: number): Promise<BrowserPageState> {
@@ -595,7 +618,7 @@ export class BrowserSessionRegistry {
     const toolResult = await this.callChromeTool('evaluate_script', {
       function:
         '() => ({ title: document.title, url: location.href, textPreview: (document.body?.innerText || "").slice(0, 4000) })',
-    });
+    }, { retryOnRecoverableConnectionError: true });
 
     const parsed = parseJsonCodeBlock<BrowserPageState>(
       extractTextContent(toolResult),
@@ -1183,6 +1206,8 @@ export class BrowserSessionRegistry {
         options.sessionId,
         async (activeSession) => {
           await this.selectPage(activeSession.pageId);
+          // Screenshots write to a concrete file path, so replaying them on
+          // transport errors can overwrite the caller's target with a later frame.
           await this.callChromeTool('take_screenshot', {
             filePath: targetPath,
             fullPage: options.fullPage ?? true,

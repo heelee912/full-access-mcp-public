@@ -6,6 +6,7 @@ import {
   extractGoogleSearchQuery,
   findReusableBrowserPage,
   isMissingChromePageError,
+  shouldRetryChromeToolCallOnRecoverableConnectionError,
 } from '../src/browserSessionRegistry.js';
 
 test('buildGoogleSearchUrl encodes the query into a Google search URL', () => {
@@ -74,5 +75,24 @@ test('isMissingChromePageError matches stale page errors from Chrome DevTools MC
   assert.equal(
     isMissingChromePageError(new Error('unknown browser session: abc')),
     false,
+  );
+});
+
+test('recoverable Chrome retry is opt-in for idempotent calls only', () => {
+  assert.equal(
+    shouldRetryChromeToolCallOnRecoverableConnectionError({}),
+    false,
+  );
+  assert.equal(
+    shouldRetryChromeToolCallOnRecoverableConnectionError({
+      retryOnRecoverableConnectionError: false,
+    }),
+    false,
+  );
+  assert.equal(
+    shouldRetryChromeToolCallOnRecoverableConnectionError({
+      retryOnRecoverableConnectionError: true,
+    }),
+    true,
   );
 });

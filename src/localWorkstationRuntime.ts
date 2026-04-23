@@ -5,6 +5,7 @@ import { buildChatGptMcpApprovalContract } from './chatGptMcpApproval.js';
 import { ChatGptMcpApprovalWatcher } from './chatGptMcpApprovalWatcher.js';
 import { ChromeRemoteDebuggingApprovalWatcher } from './chromeRemoteDebuggingApprovalWatcher.js';
 import { CommandSessionRegistry } from './commandSessionRegistry.js';
+import { buildPublishedToolDefinitionsForSurface } from './publishedToolSurface.js';
 import { type FullAccessServerSettings } from './settings.js';
 import { selectReadOnlyGatewayToolDefinitions } from './readOnlyGatewayToolCatalog.js';
 import { createFullAccessToolCatalog } from './toolCatalog.js';
@@ -66,9 +67,15 @@ export function createLocalWorkstationRuntime(
     windowsDesktopAutomation,
     windowsSystemControl,
   });
-  const approvalContract = buildChatGptMcpApprovalContract(
+  const publishedToolDefinitions = buildPublishedToolDefinitionsForSurface(
+    'full-access',
     toolCatalog.toolDefinitions,
-  );
+  ).map((toolDefinition) => ({
+    name: toolDefinition.publishedName,
+    description: toolDefinition.description,
+    annotations: toolDefinition.annotations,
+  }));
+  const approvalContract = buildChatGptMcpApprovalContract(publishedToolDefinitions);
 
   browserSessionRegistry.setChatGptMcpApprovalContract(approvalContract);
   windowsDesktopAutomation.setChatGptMcpApprovalContract(approvalContract);
