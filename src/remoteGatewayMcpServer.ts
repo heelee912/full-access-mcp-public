@@ -115,6 +115,10 @@ export function getPublishedToolNameForSurface(
   return trustedSingleUserPublishedToolNameMap[internalName] ?? internalName;
 }
 
+function getPublishedFullAccessToolName(internalName: string): string {
+  return getPublishedToolNameForSurface('full-access', internalName);
+}
+
 function buildPublishedToolDefinitions(
   surface: RemoteGatewaySurface,
   toolDefinitions: ReturnType<typeof createFullAccessToolMetadataCatalog>['toolDefinitions'],
@@ -141,14 +145,17 @@ function buildPublishedToolDefinitions(
   });
 }
 
-function createFullAccessTaskPrompt(objective: string): string {
+export function createFullAccessTaskPrompt(objective: string): string {
+  const terminalSessionToolName = getPublishedFullAccessToolName('command_run');
+  const systemSessionToolName = getPublishedFullAccessToolName('system_launch_application');
+
   return [
     'You can inspect files, edit files, run shell commands, keep long-lived terminal sessions, control the current local Chrome session, launch separate Playwright sessions, and automate the real Windows desktop on the connected local Windows PC.',
     'Prefer Full Access MCP tools over built-in container or Python tools when a Full Access MCP tool can do the job directly.',
     'Use server_describe when you need to confirm whether path access is workspace-only or computer-wide.',
     'Use the most specific high-level tool first when it matches the task, such as workspace_describe_project, workspace_review_project, or workspace_suggest_smoke_commands.',
     'For real web browsing, result inspection, or multi-step navigation, start with browser_open_session or playwright_open_session. Treat those as the primary browser lanes.',
-    'Do not use command_run or system_launch_application as the main path for browsing, opening search pages, or inspecting browser results when browser session tools can do the job.',
+    `Do not use ${terminalSessionToolName} or ${systemSessionToolName} as the main path for browsing, opening search pages, or inspecting browser results when browser session tools can do the job.`,
     'If a browser step fails, inspect current session state or page state before retrying. Do not blindly repeat the same browser request unchanged.',
     'Work in small steps, verify with concrete commands or browser checks, and report exact outcomes.',
     `Objective: ${objective}`,
@@ -166,15 +173,20 @@ function createReadOnlyTaskPrompt(objective: string): string {
   ].join('\n');
 }
 
-function createFullAccessProjectReviewPrompt(path: string, objective: string): string {
+export function createFullAccessProjectReviewPrompt(path: string, objective: string): string {
+  const contentApplyToolName = getPublishedFullAccessToolName('workspace_write_text');
+  const contentUpdateToolName = getPublishedFullAccessToolName('workspace_replace_text');
+  const terminalSessionToolName = getPublishedFullAccessToolName('command_run');
+  const terminalChannelToolName = getPublishedFullAccessToolName('command_start_session');
+
   return [
     createFullAccessTaskPrompt(objective),
     `Project path: ${path}`,
     'Recommended workflow:',
     '1. Use workspace_review_project first for structure, candidate files, and smoke-test command hints.',
     '2. Use workspace_read_text or workspace_search_text only for targeted follow-up on specific files or symbols.',
-    '3. If the user requests changes, apply the smallest safe edit with workspace_write_text or workspace_replace_text.',
-    '4. Verify with a short local smoke test using command_run or command_start_session.',
+    `3. If the user requests changes, apply the smallest safe edit with ${contentApplyToolName} or ${contentUpdateToolName}.`,
+    `4. Verify with a short local smoke test using ${terminalSessionToolName} or ${terminalChannelToolName}.`,
   ].join('\n');
 }
 
