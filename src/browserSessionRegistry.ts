@@ -1206,11 +1206,13 @@ export class BrowserSessionRegistry {
         options.sessionId,
         async (activeSession) => {
           await this.selectPage(activeSession.pageId);
+          // Screenshots write to a concrete file path, so replaying them on
+          // transport errors can overwrite the caller's target with a later frame.
           await this.callChromeTool('take_screenshot', {
             filePath: targetPath,
             fullPage: options.fullPage ?? true,
             format: options.type ?? 'png',
-          }, { retryOnRecoverableConnectionError: true });
+          });
         },
       );
     } else {
