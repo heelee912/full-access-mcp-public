@@ -31,17 +31,26 @@ Do not use the legacy localhost bridge or userscript path for new setups.
 
 Start here, in this order:
 
-1. [docs/rebuild-blueprint.md](docs/rebuild-blueprint.md)
+1. [docs/ai-operator-guide.md](docs/ai-operator-guide.md)
+   - AI / Codex operator runbook
+   - user-supplied Auth0 and ngrok values
+   - stale runtime and ChatGPT Apps `Refresh` handling
+   - abandoned paths and dead ends to avoid
+2. [docs/rebuild-blueprint.md](docs/rebuild-blueprint.md)
    - architecture
    - environment variables
    - Auth0 and ngrok setup
    - ChatGPT Developer Mode registration
    - validation and troubleshooting
-2. [docs/mcp-catalog.md](docs/mcp-catalog.md)
+3. [docs/mcp-catalog.md](docs/mcp-catalog.md)
    - full tool inventory
    - read-only surface
-   - recommended high-level tools
-3. [AGENTS.md](AGENTS.md)
+   - published remote tool names
+   - lane-specific recommendations
+4. [docs/full-access-mcp-decision-log-2026-04-23.md](docs/full-access-mcp-decision-log-2026-04-23.md)
+   - discarded experiments
+   - why they were rejected
+5. [AGENTS.md](AGENTS.md)
    - instructions for coding agents and repository AI tools
 
 ## Quick start
@@ -66,6 +75,12 @@ Copy-Item .env.example .env
 
 Fill in `.env` using the comments in [.env.example](.env.example).
 
+The public repository is sanitized. The operator must provide their own values for:
+
+- Auth0 issuer and audience
+- ngrok reserved domain
+- workstation token shared between gateway and agent
+
 Browser automation notes:
 
 - Chrome DevTools attachment uses a dedicated Chrome profile, not the user's everyday profile
@@ -87,6 +102,24 @@ Stop and inspect:
 npm run runtime:status
 npm run runtime:stop
 ```
+
+If the tool surface changed, do not assume `Refresh` alone is enough. Use this sequence:
+
+```powershell
+npm run build
+npm run runtime:stop
+npm run runtime:start
+npm run runtime:status
+npm run gateway:cli -- --path /mcp list-tools
+```
+
+Then in ChatGPT Web:
+
+1. Open `Settings -> Apps -> Full Access MCP`
+2. Press `Refresh`
+3. Start a new chat
+
+New chat, browser cache clear, or Apps `Refresh` alone is not always enough when the runtime itself is stale.
 
 Manual split-process path:
 
@@ -115,9 +148,10 @@ ngrok http 9797 --url=YOUR-NGROK-DOMAIN.ngrok-free.app
 
 ```powershell
 npm run check
-npm run test
+npm run test -- --runInBand
 npm run build
 Invoke-WebRequest -UseBasicParsing http://127.0.0.1:9797/health | Select-Object -ExpandProperty Content
+npm run gateway:cli -- --path /mcp list-tools
 ```
 
 Healthy output must include:
@@ -185,3 +219,13 @@ extension/
 ```
 
 If you are building or reviewing this project, ignore those paths unless you are intentionally removing legacy code.
+
+## Operator note
+
+If a future AI is operating this repository, treat the live gateway as the source of truth:
+
+- `npm run runtime:status`
+- `npm run gateway:cli -- --path /mcp list-tools`
+- `npm run developer-mode:print`
+
+Do not assume ChatGPT Web has already picked up tool changes. A fresh runtime plus Apps `Refresh` is part of the normal deployment workflow.
